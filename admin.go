@@ -125,9 +125,9 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	resetURL := fmt.Sprintf("%s://%s/forgot-password?token=%s", scheme, r.Host, token)
 
-	subject := "ModelMux 密码重置"
+	subject := "ModelMux Agent 密码重置"
 	msgBody := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n"+
-		"<h3>ModelMux 密码重置</h3>"+
+		"<h3>ModelMux Agent 密码重置</h3>"+
 		"<p>点击下方链接重置密码（30 分钟内有效）：</p>"+
 		`<p><a href="%s" style="padding:10px 20px;background:#6c63ff;color:white;text-decoration:none;border-radius:6px;">重置密码</a></p>`+
 		"<p>如果按钮无法点击，请手动复制以下链接：</p>"+
@@ -859,7 +859,7 @@ func handleSMTPTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build email message
-	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: ModelMux 测试邮件\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n这是一封来自 ModelMux 的测试邮件。\r\n\r\n如果您收到此邮件，说明 SMTP 配置成功！", s.FromEmail, adminEmail))
+	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: ModelMux Agent 测试邮件\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n这是一封来自 ModelMux Agent 的测试邮件。\r\n\r\n如果您收到此邮件，说明 SMTP 配置成功！", s.FromEmail, adminEmail))
 
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
 	smtpAuth := smtp.PlainAuth("", s.Username, s.Password, s.Host)

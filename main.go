@@ -293,7 +293,7 @@ func main() {
 		}
 	}()
 
-	slog.Info("ModelMux started", "port", port, "providers", len(pm.Enabled()))
+	slog.Info("ModelMux Agent started", "port", port, "providers", len(pm.Enabled()))
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		slog.Error("server error", "error", err)
 		os.Exit(1)

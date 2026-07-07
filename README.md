@@ -1,4 +1,4 @@
-# ModelMux
+# ModelMux Agent
 
 **去中心化 AI 能力共享网络** — 让大模型的能力像信息一样自由流动。
 
@@ -15,7 +15,7 @@
 
 当年，BitTorrent 让知识不再被服务器垄断；IPFS 让存储不再依赖单一节点；Tor 让通信不再受地域束缚。
 
-**ModelMux 要做的是同一件事——但共享的不是文件，而是 AI 的能力。**
+**ModelMux Agent 要做的是同一件事——但共享的不是文件，而是 AI 的能力。**
 
 我们相信，一个身处纽约的开发者手中的 Claude API，和北京程序员手中的一样有价值。当全球的 AI 能力通过一个去中心化网络汇聚在一起，任何人都可以平等地获取最强大的智能——无论他在哪里。
 
@@ -32,7 +32,7 @@
 >
 > **你们互相交换，各取所需。**
 
-这就是 ModelMux 的核心经济模型——**不是买卖，是交换**：
+这就是 ModelMux Agent 的核心经济模型——**不是买卖，是交换**：
 
 - 你贡献自己富余的模型能力（Gemini、Claude、GPT-4……）
 - 获得贡献积分，可以用来调用别人分享的模型（GLM、通义、Kimi……）
@@ -66,7 +66,7 @@
 
 ## 🧭 项目愿景
 
-ModelMux 从一个轻量级 AI API 代理起步，正在演化为一个 **P2P AI 能力共享网络**：
+ModelMux Agent 从一个轻量级 AI API 代理起步，正在演化为一个 **P2P AI 能力共享网络**：
 
 ```
   今天                          未来
@@ -459,7 +459,7 @@ curl -X POST http://localhost:8000/api/routing/weights \
                         │ POST /v1/chat/completions
                         ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  ModelMux 代理网关                       │
+│                  ModelMux Agent 代理网关                       │
 │                                                         │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
 │  │ 认证中间件 │→│ 智能路由  │→│  失败降级 (fallback)  │  │
@@ -637,9 +637,9 @@ MIT
 
 ## 🙏 开源致谢
 
-ModelMux 的诞生离不开以下优秀的开源项目和技术：
+ModelMux Agent 的诞生离不开以下优秀的开源项目和技术：
 
-- [**Go**](https://go.dev/) — 简洁高效的编程语言，ModelMux 的基石
+- [**Go**](https://go.dev/) — 简洁高效的编程语言，ModelMux Agent 的基石
 - [**golang-jwt/jwt**](https://github.com/golang-jwt/jwt) — 可靠的 JWT 认证实现
 - [**golang.org/x/crypto**](https://pkg.go.dev/golang.org/x/crypto) — 安全的 bcrypt 密码哈希
 - [**golang.org/x/net**](https://pkg.go.dev/golang.org/x/net) — SOCKS5 代理支持
@@ -651,7 +651,7 @@ ModelMux 的诞生离不开以下优秀的开源项目和技术：
 
 感谢开源社区的持续贡献，让 AI 工具生态更加繁荣。
 
-**精神先驱** — 以下项目证明了去中心化共享的力量，ModelMux 沿袭同样的信念：
+**精神先驱** — 以下项目证明了去中心化共享的力量，ModelMux Agent 沿袭同样的信念：
 
 - [**BitTorrent**](https://www.bittorrent.com/) — 让知识不再被服务器垄断，P2P 文件共享的先驱
 - [**IPFS**](https://ipfs.tech/) — 内容寻址、去中心化存储，让数据属于所有人

@@ -30,8 +30,8 @@ import (
 // This ensures OpenAI SDK compatibility at the target.
 
 const (
-	headerRelayHop  = "X-ModelMux-Hop"
-	headerRelayFrom = "X-ModelMux-Relay-From"
+	headerRelayHop  = "X-ModelMux-Agent-Hop"
+	headerRelayFrom = "X-ModelMux-Agent-Relay-From"
 )
 
 // handleNetworkRelay handles relay requests: /network/{node_id}/{rest...}

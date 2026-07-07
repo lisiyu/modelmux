@@ -1,4 +1,4 @@
-# ModelMux 一键域名绑定功能设计
+# ModelMux Agent 一键域名绑定功能设计
 
 ## 功能目标
 在 Web 管理面板实现一键绑定固定域名，替代手动配置 Cloudflare Tunnel。

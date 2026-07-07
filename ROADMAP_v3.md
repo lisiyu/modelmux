@@ -1,4 +1,4 @@
-# ModelMux v3.0 路线图：去中心化联邦网络
+# ModelMux Agent v3.0 路线图：去中心化联邦网络
 
 ## 核心愿景
 
@@ -366,7 +366,7 @@ modelmux network message <target>  # 发送点对点消息
 **分享卡片（自动生成）：**
 ```
 ┌────────────────────────────────┐
-│  🌐 ModelMux Federation       │
+│  🌐 ModelMux Agent Federation       │
 │                                │
 │  @ChalLee 的节点               │
 │  ├─ 已贡献 3 个 Provider       │

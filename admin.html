@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ModelMux - 管理面板</title>
+<title>ModelMux Agent - 管理面板</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--bg-input:#1a1a3e;--border-color:#2a2a4a;--border-focus:#6c63ff;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
@@ -357,7 +357,7 @@ select.form-input{appearance:none;cursor:pointer}
           <div class="form-group">
             <label class="form-label">💬 预设文案</label>
             <div style="display:flex;gap:8px">
-              <textarea class="form-input" id="shareCollabText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly>来一起维护我的 ModelMux 节点吧，添加你的 API Key 共享出来，大家一起用 👇</textarea>
+              <textarea class="form-input" id="shareCollabText" rows="2" style="font-size:12px;resize:none;background:var(--bg-secondary)" readonly>来一起维护我的 ModelMux Agent 节点吧，添加你的 API Key 共享出来，大家一起用 👇</textarea>
               <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('shareCollabText').value)" style="flex-shrink:0">📋 复制</button>
             </div>
           </div>
@@ -371,7 +371,7 @@ select.form-input{appearance:none;cursor:pointer}
 
     <!-- 模式 C：联邦节点邀请 -->
     <div id="shareTab-federation" class="share-tab-content" style="display:none">
-      <div class="section-note">邀请别人也部署一个 ModelMux 节点，加入联邦网络</div>
+      <div class="section-note">邀请别人也部署一个 ModelMux Agent 节点，加入联邦网络</div>
       <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
         <div style="flex:1;min-width:260px">
           <div class="form-group">
@@ -1957,7 +1957,7 @@ async function createInvite() {
       // Show the encoded invite code
       const code = data.encoded;
       if (code) {
-        const copyText = `ModelMux 联邦邀请码：\n${code}\n\n请在 ModelMux 管理页面中导入此邀请码加入网络。`;
+        const copyText = `ModelMux Agent 联邦邀请码：\n${code}\n\n请在 ModelMux Agent 管理页面中导入此邀请码加入网络。`;
         alert('邀请码已生成，请复制以下内容发送给对方：\n\n' + copyText);
       }
     } else {
@@ -2136,10 +2136,10 @@ function populateShareCenter(data) {
   // Tab A: Consumer
   document.getElementById('shareApiUrl').value = apiUrl;
   document.getElementById('shareApiKey').value = apiKey || '';
-  document.getElementById('shareConsumerText').value = '我用 ModelMux 搭了个 AI 聚合网关，34+ 模型一个地址调用，拿去用 👇\n\nAPI 地址: ' + apiUrl + (apiKey ? '\nAPI Key: ' + apiKey : '');
+  document.getElementById('shareConsumerText').value = '我用 ModelMux Agent 搭了个 AI 聚合网关，34+ 模型一个地址调用，拿去用 👇\n\nAPI 地址: ' + apiUrl + (apiKey ? '\nAPI Key: ' + apiKey : '');
 
   // QR code: JSON with API info
-  const qrConsumerData = JSON.stringify({ api_url: apiUrl, api_key: apiKey, platform: "ModelMux" });
+  const qrConsumerData = JSON.stringify({ api_url: apiUrl, api_key: apiKey, platform: "ModelMux Agent" });
   generateQRCode('qrConsumer', qrConsumerData);
 
   // Tab C: Federation
@@ -2198,7 +2198,7 @@ async function createCollabInviteCode() {
       // Update QR code
       generateQRCode('qrCollaborator', inviteLink);
       // Update preset text with the invite link
-      document.getElementById('shareCollabText').value = '来一起维护我的 ModelMux 节点吧，添加你的 API Key 共享出来，大家一起用 👇\n\n邀请链接: ' + inviteLink;
+      document.getElementById('shareCollabText').value = '来一起维护我的 ModelMux Agent 节点吧，添加你的 API Key 共享出来，大家一起用 👇\n\n邀请链接: ' + inviteLink;
       refreshInviteCodes();
     } else {
       toast('创建失败', 'error');
