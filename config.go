@@ -68,7 +68,7 @@ func (c *Config) debounceWriter() {
 }
 
 // sensitiveKeys lists config keys that must be encrypted at rest.
-var sensitiveKeys = []string{"proxy_api_key", "coze_api_token"}
+var sensitiveKeys = []string{"proxy_api_key", "coze_api_token", "cf_api_token", "cf_zone_id"}
 
 func (c *Config) load() {
 	c.mu.Lock()

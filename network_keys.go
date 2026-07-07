@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ed25519"
+	crypto_rand "crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -35,6 +36,7 @@ type KeyPayload struct {
 	Models []string `json:"models"` // allowed model list
 	Iat    int64    `json:"iat"`    // issued-at unix timestamp
 	Exp    int64    `json:"exp"`    // expiration unix timestamp
+	Nonce  string   `json:"nonce,omitempty"` // SA-06: anti-replay nonce
 }
 
 // IssuedKey is the on-disk record for a key issued by this node.
@@ -54,6 +56,38 @@ type KeyStore struct {
 }
 
 var keyStore *KeyStore
+
+// SA-06: usedNonces tracks consumed trial key nonces to prevent replay attacks.
+// Keys are nonce -> expiry time. Expired entries are cleaned up periodically.
+var usedNonces = struct {
+	sync.RWMutex
+	m map[string]time.Time
+}{m: make(map[string]time.Time)}
+
+// generateNonce creates a cryptographically secure random nonce.
+func generateNonce() string {
+	b := make([]byte, 16)
+	if _, err := crypto_rand.Read(b); err != nil {
+		// fallback: use timestamp + random (still better than no nonce)
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+// checkNonceReplay checks if a nonce has been used and records it if not.
+func checkNonceReplay(nonce string, exp int64) error {
+	if nonce == "" {
+		return nil // no nonce = old format, allow for backward compatibility
+	}
+	usedNonces.Lock()
+	defer usedNonces.Unlock()
+
+	if expiry, exists := usedNonces.m[nonce]; exists && time.Now().Before(expiry) {
+		return fmt.Errorf("nonce already used (replay attack)")
+	}
+	usedNonces.m[nonce] = time.Unix(exp, 0)
+	return nil
+}
 
 func initKeyStore(dataDir string) {
 	keyStore = &KeyStore{
@@ -318,6 +352,13 @@ func validateKeyParts(consumerID, payloadB64, sigHex string) (*KeyPayload, error
 		return nil, fmt.Errorf("key expired at %d", payload.Exp)
 	}
 
+	// SA-06: Check for nonce replay (trial keys and keys with nonces)
+	if payload.Nonce != "" {
+		if err := checkNonceReplay(payload.Nonce, payload.Exp); err != nil {
+			return nil, fmt.Errorf("replay protection: %w", err)
+		}
+	}
+
 	// Check quota
 	if payload.Quota > 0 && payload.Used >= payload.Quota {
 		return nil, fmt.Errorf("quota exhausted: used=%d, quota=%d", payload.Used, payload.Quota)
@@ -399,10 +440,15 @@ func getIssuerPublicKey(issuerNodeID string) ed25519.PublicKey {
 }
 
 // fetchPeerPublicKey fetches the Ed25519 public key from a peer node.
+// SA-02/SA-04: Only uses HTTPS addresses to prevent key interception.
 func fetchPeerPublicKey(addresses []string) ed25519.PublicKey {
 	client := &httpClient10
 	for _, addr := range addresses {
 		addr = strings.TrimRight(addr, "/")
+		// Only use HTTPS for fetching public keys
+		if !strings.HasPrefix(addr, "https://") {
+			continue
+		}
 		resp, err := client.Get(addr + "/api/node/pubkey")
 		if err != nil {
 			continue
@@ -630,6 +676,7 @@ func (ks *KeyStore) IssueTrialKey(nodeID string, quota int64) (string, *TrialKey
 		Models: []string{}, // all models allowed for trial
 		Iat:    now.Unix(),
 		Exp:    now.Add(7 * 24 * time.Hour).Unix(), // 7 days
+		Nonce:  generateNonce(), // SA-06: anti-replay nonce
 	}
 
 	payloadJSON, err := json.Marshal(payload)
@@ -766,9 +813,9 @@ func (oks *openKeyStore) IssueOpenKeyUnbound() (string, *OpenKeyInfo, error) {
 	}
 
 	now := time.Now()
-	randBytes := make([]byte, 8)
-	for i := range randBytes {
-		randBytes[i] = byte(now.UnixNano() >> (i * 8))
+	randBytes := make([]byte, 16)
+	if _, err := crypto_rand.Read(randBytes); err != nil {
+		return "", nil, fmt.Errorf("failed to generate random bytes: %w", err)
 	}
 	randHex := hex.EncodeToString(randBytes)
 	consumerID := fmt.Sprintf("open_unbound_%s", randHex)
@@ -837,9 +884,9 @@ func (oks *openKeyStore) IssueOpenKeyBound(nodeID string) (string, *OpenKeyInfo,
 	}
 
 	now := time.Now()
-	randBytes := make([]byte, 8)
-	for i := range randBytes {
-		randBytes[i] = byte(now.UnixNano() >> (i * 8))
+	randBytes := make([]byte, 16)
+	if _, err := crypto_rand.Read(randBytes); err != nil {
+		return "", nil, fmt.Errorf("failed to generate random bytes: %w", err)
 	}
 	randHex := hex.EncodeToString(randBytes)
 	consumerID := fmt.Sprintf("open_bound_%s_%s", nodeID, randHex)

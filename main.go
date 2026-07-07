@@ -16,6 +16,23 @@ import (
 
 const AppVersion = "3.2.0"
 
+// SA-08: checkAndFixFilePermissions ensures sensitive files have restricted permissions.
+func checkAndFixFilePermissions(paths []string) {
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue // file doesn't exist yet, will be created with correct perms
+		}
+		mode := info.Mode().Perm()
+		if mode != 0600 {
+			slog.Warn("fixing file permissions", "path", path, "from", fmt.Sprintf("%04o", mode), "to", "0600")
+			if err := os.Chmod(path, 0600); err != nil {
+				slog.Error("failed to fix file permissions", "path", path, "error", err)
+			}
+		}
+	}
+}
+
 func main() {
 	// Initialize all components
 	os.MkdirAll("data", 0755)
@@ -28,6 +45,19 @@ func main() {
 	initAuth("data/admin.json")
 	initVMessManager("data")
 	initMultiUser("data")
+
+	// SA-08: Fix data directory and file permissions
+	os.Chmod("data", 0700)
+	checkAndFixFilePermissions([]string{
+		"data/.key",
+		"data/config.json",
+		"data/admin.json",
+		"data/providers.json",
+		"data/sider_token_status.json",
+		"data/issued_keys.json",
+		"data/open_keys.json",
+		"data/invite_store.json",
+	})
 
 	// Initialize v3.0 federation components
 	initNode("data")
@@ -64,6 +94,10 @@ func main() {
 
 	// Initialize open key store (Phase 2 Economic Model)
 	initOpenKeyStore("data")
+
+	// Initialize algorithm chain & quota manager (Phase 3)
+	initAlgorithmChain("data")
+	initQuotaManager(algoChain)
 
 	// Start heartbeat loop (Phase 2)
 	startHeartbeatLoop()
@@ -264,8 +298,19 @@ func main() {
 
 	// Node Heartbeat & Discovery (Phase 2)
 	mux.HandleFunc("POST /api/network/heartbeat", handleNetworkHeartbeat)
-	mux.HandleFunc("GET /api/node/pubkey", handleNodePubKey)
+	mux.HandleFunc("GET /api/node/pubkey", requireHTTPS(handleNodePubKey))
 	mux.HandleFunc("GET /api/node/info", handleNodeInfo)
+
+	// Algorithm Chain & Quota (Phase 3)
+	mux.HandleFunc("GET /api/network/algorithm/current", handleAlgorithmCurrent)
+	mux.HandleFunc("GET /api/network/algorithm/history", handleAlgorithmHistory)
+	mux.HandleFunc("POST /api/network/algorithm/propose", withAuth(handleAlgorithmPropose))
+	mux.HandleFunc("POST /api/network/algorithm/vote", withAuth(handleAlgorithmVote))
+	mux.HandleFunc("POST /api/network/algorithm/gossip", handleAlgorithmGossip)
+	mux.HandleFunc("GET /api/network/algorithm/proposals", handleAlgorithmProposals)
+	mux.HandleFunc("GET /api/network/algorithm/validate", handleAlgorithmValidate)
+	mux.HandleFunc("GET /api/network/open-key-quota", handleOpenKeyQuota)
+	mux.HandleFunc("GET /api/network/open-key-quota/all", handleOpenKeyQuotaAll)
 
 	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
 	// Register per-method to avoid conflict with GET / admin page handler

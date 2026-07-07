@@ -69,6 +69,15 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 
 	// Phase 2: Check key-based routing restrictions
 	authHeader := r.Header.Get("Authorization")
+	// SA-05: Validate open key signatures at relay entry point
+	if strings.HasPrefix(authHeader, "Bearer mk_open_") {
+		openKey := strings.TrimPrefix(authHeader, "Bearer ")
+		if _, err := ValidateKey(openKey); err != nil {
+			writeError(w, 401, "invalid open key signature")
+			slog.Warn("relay rejected open key with invalid signature", "node_id", targetNodeID)
+			return
+		}
+	}
 	if strings.HasPrefix(authHeader, "Bearer mk_trial_") {
 		// Trial keys can ONLY route back to the issuer node
 		issuerNodeID := extractTrialKeyIssuer(authHeader)
@@ -385,6 +394,13 @@ func relayToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, pa
 	targetAddr := pickBestAddress(entry.Addresses)
 	if targetAddr == "" {
 		writeError(w, 502, "no reachable address for node")
+		return
+	}
+
+	// SA-04: Enforce HTTPS for relay to prevent data interception
+	if !strings.HasPrefix(targetAddr, "https://") {
+		slog.Warn("relay target uses insecure protocol, rejecting", "node_id", entry.NodeID, "addr", targetAddr)
+		writeError(w, 502, "relay target must use HTTPS for security")
 		return
 	}
 

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand"
+	"crypto/rand"
 	"net/http"
 	"sort"
 	"sync"
@@ -122,9 +122,9 @@ func (g *GossipManager) selectPeers(count int) []NodeInfo {
 		}
 	}
 
-	// Shuffle both groups
-	rand.Shuffle(len(seeds), func(i, j int) { seeds[i], seeds[j] = seeds[j], seeds[i] })
-	rand.Shuffle(len(regular), func(i, j int) { regular[i], regular[j] = regular[j], regular[i] })
+	// Shuffle both groups using crypto/rand (Fisher-Yates with secure randomness)
+	cryptoShuffle(seeds)
+	cryptoShuffle(regular)
 
 	// Prefer seeds, then fill with regular nodes
 	result := make([]NodeInfo, 0, count)
@@ -555,5 +555,19 @@ func (g *GossipManager) stop() {
 	default:
 		close(g.stopCh)
 		slog.Info("gossip manager stopped")
+	}
+}
+
+// cryptoShuffle performs a Fisher-Yates shuffle using crypto/rand for secure randomness.
+func cryptoShuffle(nodes []NodeInfo) {
+	n := len(nodes)
+	for i := n - 1; i > 0; i-- {
+		buf := make([]byte, 8)
+		if _, err := rand.Read(buf); err != nil {
+			break // fallback: leave remaining elements in place
+		}
+		j := int(uint64(buf[0])<<56|uint64(buf[1])<<48|uint64(buf[2])<<40|uint64(buf[3])<<32|
+			uint64(buf[4])<<24|uint64(buf[5])<<16|uint64(buf[6])<<8|uint64(buf[7])) % (i + 1)
+		nodes[i], nodes[j] = nodes[j], nodes[i]
 	}
 }

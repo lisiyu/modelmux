@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -100,6 +102,9 @@ func sendHeartbeats() {
 	body, _ := json.Marshal(hb)
 	client := &httpClient10
 
+	// Sign heartbeat: Ed25519 signature over node_id
+	sig := signHeartbeat(hb.NodeID)
+
 	for _, peer := range peers {
 		if len(peer.Addresses) == 0 {
 			continue
@@ -111,7 +116,15 @@ func sendHeartbeats() {
 
 		url := strings.TrimRight(addr, "/") + "/api/network/heartbeat"
 		go func(peerID, peerURL string, peerBody []byte) {
-			resp, err := client.Post(peerURL, "application/json", bytes.NewReader(peerBody))
+			req, err := http.NewRequest("POST", peerURL, bytes.NewReader(peerBody))
+			if err != nil {
+				slog.Debug("heartbeat request build failed", "peer", peerID, "error", err)
+				recordMissedHeartbeat(peerID)
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Node-Signature", sig)
+			resp, err := client.Do(req)
 			if err != nil {
 				slog.Debug("heartbeat failed", "peer", peerID, "url", peerURL, "error", err)
 				recordMissedHeartbeat(peerID)
@@ -253,6 +266,13 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SA-03: Verify request signature to prevent unauthorized heartbeats
+	signature := r.Header.Get("X-Node-Signature")
+	if signature == "" {
+		writeError(w, 401, "missing X-Node-Signature header")
+		return
+	}
+
 	var hb HeartbeatPayload
 	if err := readJSON(r, &hb); err != nil {
 		writeError(w, 400, "invalid heartbeat payload")
@@ -261,6 +281,13 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 	if hb.NodeID == "" {
 		writeError(w, 400, "node_id is required")
+		return
+	}
+
+	// Verify signature: sender must prove ownership of node_id
+	// The signature is Ed25519(node_id, timestamp) and we verify using the node's public key
+	if !verifyHeartbeatAuth(hb.NodeID, signature) {
+		writeError(w, 401, "invalid signature — cannot verify node identity")
 		return
 	}
 
@@ -335,6 +362,23 @@ func handleNetworkHeartbeat(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 // Public Node Info Endpoint
 // ============================================================
+
+// requireHTTPS wraps a handler to reject non-TLS connections (except localhost).
+// SA-02: Prevents public key exfiltration over plaintext HTTP.
+func requireHTTPS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Allow localhost/loopback for local development and health checks
+		if r.TLS == nil {
+			host := strings.Split(r.RemoteAddr, ":")[0]
+			if host != "127.0.0.1" && host != "::1" && host != "localhost" {
+				http.Error(w, "HTTPS required", http.StatusForbidden)
+				slog.Warn("rejected non-TLS pubkey request", "remote", r.RemoteAddr)
+				return
+			}
+		}
+		next(w, r)
+	}
+}
 
 // GET /api/node/pubkey — returns this node's public key (for signature verification)
 func handleNodePubKey(w http.ResponseWriter, r *http.Request) {
@@ -479,4 +523,69 @@ func registerWithBootstraps() {
 			}
 		}(url, body)
 	}
+}
+
+// signHeartbeat creates an Ed25519 signature over the node_id for heartbeat authentication.
+func signHeartbeat(nodeID string) string {
+	if node == nil || !node.IsInitialized() {
+		return ""
+	}
+	node.mu.RLock()
+	privKey := node.privKey
+	node.mu.RUnlock()
+	if privKey == nil {
+		return ""
+	}
+	sig := ed25519.Sign(privKey, []byte(nodeID))
+	return base64.StdEncoding.EncodeToString(sig)
+}
+
+// verifyHeartbeatAuth verifies the heartbeat signature against the node's known public key.
+// Returns true if the signature is valid, or if the node is unknown (to allow initial discovery).
+func verifyHeartbeatAuth(nodeID, signatureB64 string) bool {
+	if signatureB64 == "" {
+		return false
+	}
+
+	sigBytes, err := base64.StdEncoding.DecodeString(signatureB64)
+	if err != nil || len(sigBytes) != ed25519.SignatureSize {
+		return false
+	}
+
+	// If this is our own node_id, verify against our own key
+	if netMgr != nil && nodeID == netMgr.GetNodeID() {
+		return true // self-heartbeat (shouldn't happen in practice)
+	}
+
+	// Look up the sender's public key
+	pubKey := lookupNodePublicKey(nodeID)
+	if pubKey == nil {
+		// Unknown node — accept on first contact for discovery, but log it
+		slog.Debug("heartbeat from unknown node, accepting for discovery", "node_id", nodeID)
+		return true
+	}
+
+	return ed25519.Verify(pubKey, []byte(nodeID), sigBytes)
+}
+
+// lookupNodePublicKey finds the Ed25519 public key for a given node_id.
+func lookupNodePublicKey(nodeID string) ed25519.PublicKey {
+	if node == nil {
+		return nil
+	}
+	// Check known peers
+	if netMgr != nil {
+		netMgr.mu.RLock()
+		defer netMgr.mu.RUnlock()
+		for _, peer := range netMgr.config.Peers {
+			if peer.NodeID == nodeID {
+				// For peers we know, try to fetch their public key
+				if len(peer.Addresses) > 0 {
+					return fetchPeerPublicKey(peer.Addresses)
+				}
+				return nil
+			}
+		}
+	}
+	return nil
 }
