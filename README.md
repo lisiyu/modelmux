@@ -2,7 +2,7 @@
 
 **轻量级多平台 AI 模型统一代理管理系统** — 将 34+ AI 平台封装为 OpenAI 兼容 API，智能路由，一键部署。
 
-> Go 重写版，单二进制，零依赖，极致性能。
+> 单二进制，零依赖，极致性能。
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -459,22 +459,6 @@ modelmux/
 
 ---
 
-## 📊 对比 Python 版
-
-| | Python (coze-openai-proxy) | Go (ModelMux) |
-|---|---|---|
-| 每连接内存 | ~50-100KB | ~2-5KB |
-| 冷启动 | ~2s | ~0.01s |
-| 部署 | Python + pip + venv | 单二进制 |
-| SSE 转发 | 逐 chunk 读写 | 零拷贝流式 |
-| 并发模型 | asyncio + threads | goroutine |
-| 安全 | 明文存储 | AES-256-GCM 加密 |
-| 多用户 | ❌ | ✅ 邀请码 + 消费者 |
-| 路由模式 | 单一路径 | 4 种智能路由 |
-| 健康检测 | ❌ | ✅ 每 5 分钟探活 |
-
----
-
 ## 📦 预置平台一览
 
 | # | 平台 | 优先级 | 类型 | 特色 |
@@ -591,3 +575,29 @@ ModelMux 的诞生离不开以下优秀的开源项目和技术：
 - [**new-api**](https://github.com/Calcium-Ion/new-api) — one-api 的增强版，拓展了多用户和渠道管理的思路
 
 感谢开源社区的持续贡献，让 AI 工具生态更加繁荣。
+
+---
+
+## 📋 更新日志
+
+### v3.2.0 (2026-07)
+
+**🔴 安全 & 性能**
+- **Rate Limiting 限流** — 令牌桶算法，全局 QPS + 按 Consumer 独立限流，超限返回 429
+- **CORS 白名单** — 支持精确匹配 + `*.example.com` 通配符子域，`cors_allowed_origins` 配置项
+- **敏感字段加密统一** — `coze_api_token` 纳入 AES-256-GCM 加密范围，Provider APIKey 加密存储
+- **JSON 解析错误处理** — 所有 API 端点解析失败统一返回 400 + 明确错误消息
+
+**🟡 功能增强**
+- **Provider 模型列表自动同步** — `SyncModels()` 方法 + `/api/providers/{id}/sync-models` 端点 + 管理面板一键同步按钮
+- **联邦 Phase 3 Gossip-DHT 混合发现** — DHT 哈希环路由表，支持 successor/predecessor 查找
+- **结构化日志系统** — `log_level` 配置，请求日志中间件，输出到 `data/access.log` + stdout
+- **SSE 实时推送** — `/events` 端点，推送 Provider 状态变更、健康变化、配置更新
+- **Prometheus 指标** — `/metrics` 端点，请求总数、延迟、错误率、Token 用量等
+- **前端模块化** — admin.html JS 按功能分为 10+ 模块注释区域，结构清晰
+- **配置热更新** — `SIGHUP` 信号触发配置重载，无需重启进程
+
+**🐛 Bug 修复**
+- 联邦配置开关保存后即时生效（修复 `federation_enabled` / `federation_relay_enabled` 不生效）
+- 联邦配置 API 返回 `approval_mode` 和 `token_budget` 字段
+- 管理面板版本号更新为 v3.2.0

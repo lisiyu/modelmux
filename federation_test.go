@@ -83,7 +83,7 @@ func makeTestNodeInfo(id, status string, models []string) NodeInfo {
 		Status:       status,
 		JoinedAt:     time.Now().UTC().Format(time.RFC3339),
 		LastSeen:     time.Now().UTC().Format(time.RFC3339),
-		Version:      "3.1.0",
+		Version:      "3.2.0",
 	}
 }
 
@@ -196,7 +196,7 @@ func TestNode_Identity(t *testing.T) {
 		if info.Status != "active" {
 			t.Fatalf("GetInfo Status should be 'active', got %q", info.Status)
 		}
-		if info.Version != "3.1.0" {
+		if info.Version != "3.2.0" {
 			t.Fatalf("GetInfo Version should be '3.1.0', got %q", info.Version)
 		}
 		if info.PubKey == "" {
