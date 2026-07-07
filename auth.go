@@ -40,10 +40,19 @@ func (a *Auth) load() {
 		a.data.JWTSecret = randomString(64)
 		a.save()
 	}
+	// Decrypt SMTP password if encrypted
+	if a.data.SMTP.Password != "" && IsEncrypted(a.data.SMTP.Password) {
+		a.data.SMTP.Password = enc.Decrypt(a.data.SMTP.Password)
+	}
 }
 
 func (a *Auth) save() {
-	b, _ := json.MarshalIndent(a.data, "", "  ")
+	// Deep copy and encrypt SMTP password before writing
+	safe := a.data
+	if safe.SMTP.Password != "" && !IsEncrypted(safe.SMTP.Password) {
+		safe.SMTP.Password = enc.Encrypt(safe.SMTP.Password)
+	}
+	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.MkdirAll("data", 0755)
 	os.WriteFile(a.path, b, 0644)
 }

@@ -237,6 +237,22 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 
+  <!-- 配置管理 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">💾</span> 配置管理</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+      导出所有配置（平台、路由、SMTP 等）为 JSON 文件，或从备份文件导入恢复。
+      <br><span style="color:var(--warning)">⚠️ 导入会覆盖当前所有平台和配置</span>
+    </p>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportConfig()">📤 导出配置</button>
+      <label class="btn btn-secondary" style="cursor:pointer;margin:0">
+        📥 导入配置
+        <input type="file" accept=".json" onchange="importConfig(this)" style="display:none">
+      </label>
+    </div>
+  </div>
+
   <!-- 账户安全 -->
   <div class="card">
     <div class="card-title"><span class="icon">🔐</span> 账户安全</div>
@@ -851,6 +867,41 @@ async function testSmtp() { toast('发送测试邮件...', 'info'); try { const 
 async function loadAdminInfo() { try { const r = await authFetch('/api/admin/info'); const d = await r.json(); document.getElementById('adminEmail').value = d.email||''; } catch(e) {} }
 async function updateEmail() { const e = document.getElementById('adminEmail').value.trim(); if (!e) return toast('邮箱不能为空','error'); await authFetch('/api/admin/update-email', {method:'POST', body:JSON.stringify({email:e})}); toast('邮箱已更新'); }
 async function changePassword() { const o = document.getElementById('oldPass').value; const n = document.getElementById('newPass').value; if (!o||!n) return toast('请填写密码','error'); try { const r = await authFetch('/api/admin/change-password', {method:'POST', body:JSON.stringify({old_password:o,new_password:n})}); const d = await r.json(); toast(d.success?'✅ 密码已修改':'❌ '+d.detail, d.success?'success':'error'); document.getElementById('oldPass').value=''; document.getElementById('newPass').value=''; } catch(e) { toast(e.message,'error'); } }
+
+async function exportConfig() {
+  try {
+    const r = await authFetch('/api/config/export');
+    if (!r.ok) throw new Error('导出失败');
+    const data = await r.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ts = new Date().toISOString().slice(0,10);
+    a.download = `modelmux-config-${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('✅ 配置已导出', 'success');
+  } catch(e) { toast('❌ '+e.message, 'error'); }
+}
+
+async function importConfig(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm(`确认导入 ${file.name}？\n这将覆盖当前所有平台和配置！`)) {
+    input.value = '';
+    return;
+  }
+  try {
+    const formData = new FormData();
+    formData.append('config', file);
+    const r = await authFetch('/api/config/import', {method:'POST', body:formData});
+    const d = await r.json();
+    toast(d.success ? `✅ 导入成功，已恢复 ${d.providers_count} 个平台` : '❌ '+d.detail, d.success?'success':'error');
+    if (d.success) setTimeout(()=>location.reload(), 1500);
+  } catch(e) { toast('❌ '+e.message, 'error'); }
+  input.value = '';
+}
 
 // ===== Start =====
 init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); });

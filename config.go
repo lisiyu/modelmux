@@ -30,6 +30,9 @@ func initConfig(path string) {
 	cfg.load()
 }
 
+// sensitiveKeys lists config keys that must be encrypted at rest.
+var sensitiveKeys = []string{"proxy_api_key"}
+
 func (c *Config) load() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -39,12 +42,28 @@ func (c *Config) load() {
 		return
 	}
 	json.Unmarshal(b, &c.data)
+	// Decrypt sensitive fields
+	for _, key := range sensitiveKeys {
+		if v, ok := c.data[key].(string); ok && v != "" && IsEncrypted(v) {
+			c.data[key] = enc.Decrypt(v)
+		}
+	}
 	slog.Info("config loaded", "path", c.path, "keys", len(c.data))
 }
 
 func (c *Config) save() {
 	os.MkdirAll(filepath.Dir(c.path), 0755)
-	b, _ := json.MarshalIndent(c.data, "", "  ")
+	// Deep copy and encrypt sensitive fields before writing
+	safe := make(map[string]any, len(c.data))
+	for k, v := range c.data {
+		safe[k] = v
+	}
+	for _, key := range sensitiveKeys {
+		if v, ok := safe[key].(string); ok && v != "" && !IsEncrypted(v) {
+			safe[key] = enc.Encrypt(v)
+		}
+	}
+	b, _ := json.MarshalIndent(safe, "", "  ")
 	os.WriteFile(c.path, b, 0644)
 }
 

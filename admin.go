@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/tls"
 	"encoding/json"
+	"golang.org/x/crypto/bcrypt"
+	"io"
 	"log/slog"
 	"fmt"
 	"net/smtp"
@@ -701,4 +703,177 @@ func sendMailTLS(addr string, a smtp.Auth, from string, to []string, msg []byte)
 		return err
 	}
 	return c.Quit()
+}
+
+// POST /api/auth/reset-with-code — reset password using Proxy API Key + clear all keys
+func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Code        string `json:"code"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.Code == "" || body.NewPassword == "" {
+		writeError(w, 400, "code and new_password required")
+		return
+	}
+	if len(body.NewPassword) < 6 {
+		writeError(w, 400, "password must be at least 6 characters")
+		return
+	}
+
+	// Validate against the stored Proxy API Key
+	storedKey := cfg.Get("proxy_api_key", "")
+	if storedKey == "" {
+		writeError(w, 403, "no Proxy API Key configured, cannot reset via this method")
+		return
+	}
+	if body.Code != storedKey {
+		writeError(w, 401, "invalid Proxy API Key")
+		return
+	}
+
+	// Reset password
+	hash, _ := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
+	auth.data.Admin.PasswordHash = string(hash)
+	auth.data.Reset = nil
+	auth.save()
+
+	// Clear all provider API keys
+	cleared := pm.ClearAllAPIKeys()
+
+	// Clear the Proxy API Key itself (it was just used as the reset code)
+	cfg.mu.Lock()
+	delete(cfg.data, "proxy_api_key")
+	cfg.data["updated_at"] = time.Now().Format(time.RFC3339)
+	cfg.mu.Unlock()
+	cfg.save()
+
+	slog.Info("password reset via Proxy API Key", "cleared_keys", cleared)
+	writeJSON(w, 200, map[string]any{
+		"success":      true,
+		"message":      "password reset successfully, all API keys cleared",
+		"keys_cleared": cleared,
+	})
+}
+
+// GET /api/config/export — export all configuration as JSON
+func handleExportConfig(w http.ResponseWriter, r *http.Request) {
+	smtpCfg := auth.GetSMTP()
+	export := map[string]any{
+		"version":     "1.0",
+		"exported_at": time.Now().Format(time.RFC3339),
+		"providers":   pm.GetAll(),
+		"config": map[string]any{
+			"routing_mode":  cfg.Get("routing_mode", "priority"),
+			"proxy_api_key": cfg.Get("proxy_api_key", ""),
+		},
+		"smtp": map[string]any{
+			"host":       smtpCfg.Host,
+			"port":       smtpCfg.Port,
+			"username":   smtpCfg.Username,
+			"from_email": smtpCfg.FromEmail,
+			"use_tls":    smtpCfg.UseTLS,
+			// Don't export SMTP password for security
+		},
+		"admin": map[string]any{
+			"username": auth.data.Admin.Username,
+			"email":    auth.data.Admin.Email,
+		},
+	}
+	writeJSON(w, 200, export)
+}
+
+// POST /api/config/import — import configuration from JSON
+func handleImportConfig(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		writeError(w, 400, "failed to parse form data")
+		return
+	}
+
+	file, _, err := r.FormFile("config")
+	if err != nil {
+		writeError(w, 400, "missing config file")
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, 400, "failed to read file")
+		return
+	}
+
+	var importData struct {
+		Providers []Provider `json:"providers"`
+		Config    struct {
+			RoutingMode string `json:"routing_mode"`
+			ProxyAPIKey string `json:"proxy_api_key"`
+		} `json:"config"`
+		SMTP struct {
+			Host      string `json:"host"`
+			Port      int    `json:"port"`
+			Username  string `json:"username"`
+			FromEmail string `json:"from_email"`
+			UseTLS    bool   `json:"use_tls"`
+		} `json:"smtp"`
+		Admin struct {
+			Email string `json:"email"`
+		} `json:"admin"`
+	}
+
+	if err := json.Unmarshal(data, &importData); err != nil {
+		writeError(w, 400, "invalid config format: "+err.Error())
+		return
+	}
+
+	// Import providers
+	if importData.Providers != nil {
+		pm.mu.Lock()
+		pm.providers = make(map[string]Provider)
+		for _, p := range importData.Providers {
+			if p.ID == "" {
+				p.ID = strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(p.Name, " ", "-"), "_", "-"))
+			}
+			pm.providers[p.ID] = p
+		}
+		pm.save()
+		pm.mu.Unlock()
+	}
+
+	// Import config
+	updates := make(map[string]any)
+	if importData.Config.RoutingMode != "" {
+		updates["routing_mode"] = importData.Config.RoutingMode
+	}
+	if importData.Config.ProxyAPIKey != "" {
+		updates["proxy_api_key"] = importData.Config.ProxyAPIKey
+	}
+	if len(updates) > 0 {
+		cfg.SetMany(updates)
+	}
+
+	// Import SMTP (without password)
+	if importData.SMTP.Host != "" {
+		smtpCfg := auth.GetSMTP()
+		smtpCfg.Host = importData.SMTP.Host
+		smtpCfg.Port = importData.SMTP.Port
+		smtpCfg.Username = importData.SMTP.Username
+		smtpCfg.FromEmail = importData.SMTP.FromEmail
+		smtpCfg.UseTLS = importData.SMTP.UseTLS
+		auth.UpdateSMTP(smtpCfg)
+	}
+
+	// Import admin email
+	if importData.Admin.Email != "" {
+		auth.UpdateEmail(importData.Admin.Email)
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"success":         true,
+		"message":         "config imported successfully",
+		"providers_count": len(importData.Providers),
+	})
 }

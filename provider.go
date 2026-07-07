@@ -39,6 +39,10 @@ func (m *ProviderManager) load() {
 	var list []Provider
 	if json.Unmarshal(b, &list) == nil {
 		for _, p := range list {
+			// Decrypt API key if encrypted
+			if p.APIKey != "" && IsEncrypted(p.APIKey) {
+				p.APIKey = enc.Decrypt(p.APIKey)
+			}
 			m.providers[p.ID] = p
 		}
 		slog.Info("providers loaded", "count", len(m.providers))
@@ -48,6 +52,10 @@ func (m *ProviderManager) load() {
 func (m *ProviderManager) save() {
 	list := make([]Provider, 0, len(m.providers))
 	for _, p := range m.providers {
+		// Encrypt API key before writing to disk
+		if p.APIKey != "" && !IsEncrypted(p.APIKey) {
+			p.APIKey = enc.Encrypt(p.APIKey)
+		}
 		list = append(list, p)
 	}
 	b, _ := json.MarshalIndent(list, "", "  ")
@@ -481,4 +489,23 @@ func (m *ProviderManager) RoutingAdvice(model string) []map[string]any {
 		return out[i]["priority"].(int) < out[j]["priority"].(int)
 	})
 	return out
+}
+
+// ClearAllAPIKeys removes API keys from all providers (security measure for password reset).
+func (m *ProviderManager) ClearAllAPIKeys() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for id, p := range m.providers {
+		if p.APIKey != "" {
+			p.APIKey = ""
+			m.providers[id] = p
+			count++
+		}
+	}
+	if count > 0 {
+		m.save()
+		slog.Info("cleared all provider API keys", "count", count)
+	}
+	return count
 }

@@ -225,12 +225,47 @@ body {
           <input type="checkbox" id="rememberMe">
           记住我（7天免登录）
         </label>
-        <a href="/forgot-password" class="forgot-link">忘记密码？</a>
+        <a href="javascript:void(0)" class="forgot-link" onclick="toggleResetForm(true)">忘记密码？</a>
       </div>
       <button type="submit" class="btn" id="btnLogin">
         登录
       </button>
     </form>
+
+    <!-- Reset Password Form -->
+    <div id="resetForm" style="display:none">
+      <h2 style="margin-top:24px">🔑 重置密码</h2>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;text-align:center">
+        输入已配置的 Proxy API Key 验证身份<br>
+        <span style="color:var(--error);font-size:12px">⚠️ 重置后所有平台 API Key 和 Proxy API Key 将被清空</span>
+      </p>
+      <div class="error-msg" id="resetErrorMsg"></div>
+      <div class="form-group">
+        <label class="form-label">Proxy API Key</label>
+        <input type="text" class="form-input" id="inputResetCode"
+               placeholder="请输入之前配置的 Proxy API Key" autocomplete="off" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">新密码</label>
+        <div class="input-wrapper">
+          <input type="password" class="form-input" id="inputNewPassword"
+                 placeholder="至少 6 位" autocomplete="new-password" required>
+          <button type="button" class="toggle-password" onclick="toggleNewPwd()">👁️</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">确认新密码</label>
+        <input type="password" class="form-input" id="inputConfirmPassword"
+               placeholder="再次输入新密码" autocomplete="new-password" required>
+      </div>
+      <button type="button" class="btn" id="btnReset" onclick="handleReset()" style="margin-bottom:12px">
+        确认重置
+      </button>
+      <button type="button" class="btn" onclick="toggleResetForm(false)"
+              style="background:var(--bg-input);border:1px solid var(--border-color)">
+        ← 返回登录
+      </button>
+    </div>
   </div>
 </div>
 
@@ -315,6 +350,73 @@ async function handleLogin(e) {
     btn.disabled = false;
     btn.innerHTML = '登录';
   }
+}
+
+function toggleResetForm(show) {
+  document.querySelector('form').style.display = show ? 'none' : '';
+  document.getElementById('resetForm').style.display = show ? '' : 'none';
+  document.querySelector('.login-card h2').style.display = show ? 'none' : '';
+  document.getElementById('errorMsg').style.display = show ? 'none' : '';
+  if (show) document.getElementById('resetErrorMsg').classList.remove('show');
+  else document.getElementById('resetErrorMsg').classList.remove('show');
+}
+
+function toggleNewPwd() {
+  const input = document.getElementById('inputNewPassword');
+  const btn = event.target;
+  if (input.type === 'password') { input.type = 'text'; btn.textContent = '🙈'; }
+  else { input.type = 'password'; btn.textContent = '👁️'; }
+}
+
+async function handleReset() {
+  const code = document.getElementById('inputResetCode').value.trim();
+  const newPwd = document.getElementById('inputNewPassword').value;
+  const confirmPwd = document.getElementById('inputConfirmPassword').value;
+
+  if (!code || !newPwd) {
+    showResetError('请填写重置码和新密码');
+    return;
+  }
+  if (newPwd.length < 6) {
+    showResetError('密码至少 6 位');
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    showResetError('两次输入的密码不一致');
+    return;
+  }
+
+  const btn = document.getElementById('btnReset');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 重置中...';
+
+  try {
+    const resp = await fetch('/api/auth/reset-with-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, new_password: newPwd }),
+    });
+    const data = await resp.json();
+
+    if (resp.ok && data.success) {
+      showToast('密码重置成功！已清空 ' + (data.keys_cleared||0) + ' 个 API Key', 'success');
+      setTimeout(() => { toggleResetForm(false); }, 1500);
+    } else {
+      showResetError(data.detail || '重置失败');
+      btn.disabled = false;
+      btn.innerHTML = '确认重置';
+    }
+  } catch (e) {
+    showResetError('网络错误: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '确认重置';
+  }
+}
+
+function showResetError(msg) {
+  const el = document.getElementById('resetErrorMsg');
+  el.textContent = msg;
+  el.classList.add('show');
 }
 
 function showError(msg) {

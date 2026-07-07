@@ -16,12 +16,18 @@ import (
 func main() {
 	// Initialize all components
 	os.MkdirAll("data", 0755)
+	initEncryptor("data/.key")
 	initConfig("data/config.json")
 	initProviderManager("data/providers.json")
 	initTracker("data/usage.json")
 	initSiderMonitor("data/sider_token_status.json")
 	initAuth("data/admin.json")
 	initVMessManager("data")
+
+	// Migrate: re-save to encrypt any plaintext sensitive data
+	cfg.save()
+	pm.save()
+	auth.save()
 
 	// Re-start VMess proxies on startup
 	for _, p := range pm.GetAll() {
@@ -52,10 +58,13 @@ func main() {
 	mux.HandleFunc("POST /api/forgot-password", handleForgotPassword)
 	mux.HandleFunc("POST /api/reset-password", handleResetPassword)
 	mux.HandleFunc("POST /api/reset-password/verify", handleVerifyResetToken)
+	mux.HandleFunc("POST /api/auth/reset-with-code", handleResetWithCode)
 
 	// Auth (protected)
 	mux.HandleFunc("GET /api/auth/verify", withAuth(handleVerifyAuth))
 	mux.HandleFunc("GET /api/config", withAuth(handleGetConfig))
+	mux.HandleFunc("GET /api/config/export", withAuth(handleExportConfig))
+	mux.HandleFunc("POST /api/config/import", withAuth(handleImportConfig))
 	mux.HandleFunc("POST /api/config", withAuth(handleSaveConfig))
 	mux.HandleFunc("GET /api/status", withAuth(handleStatus))
 	mux.HandleFunc("GET /api/admin/info", withAuth(handleAdminInfo))
