@@ -333,6 +333,18 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
       </div>
     </div>
+
+    <!-- Genesis Hash — 网络身份 -->
+    <div id="genesisBanner" style="background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:10px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-secondary)">🔐 网络身份 (Genesis Hash)</div>
+        <div style="font-family:monospace;font-size:12px;color:var(--accent-start);margin-top:2px" id="genesisNetworkId">加载中...</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);text-align:right">
+        <div id="genesisNetworkName">modelmux-mainnet</div>
+        <div style="cursor:help" title="所有共享此 Genesis Hash 的节点自动处于同一网络。Fork 项目后不改 Genesis 配置即可互通。">ⓘ 所有 fork 共享此哈希即可互通</div>
+      </div>
+    </div>
     
     <!-- 节点身份 -->
     <div class="status-grid" id="fedNodeInfo">
@@ -1319,6 +1331,12 @@ async function loadFederationStatus() {
     if (statusEl) {
       statusEl.textContent = data.enabled ? '✅ 已加入联邦网络' : '⚠️ 未启用（请在下方配置中开启）';
       statusEl.style.color = data.enabled ? 'var(--success)' : 'var(--warning, #f59e0b)';
+    }
+
+    // Genesis Hash
+    if (data.genesis) {
+      document.getElementById('genesisNetworkId').textContent = data.genesis.network_id;
+      document.getElementById('genesisNetworkName').textContent = data.genesis.network_name;
     }
     
     if (data.messages && data.messages.unread > 0) {

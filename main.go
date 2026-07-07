@@ -29,6 +29,7 @@ func main() {
 
 	// Initialize v3.0 federation components
 	initNode("data")
+	LoadGenesisConfig("data") // Load custom genesis or use compiled-in default
 	initFederation("data")
 	initGossip()
 	initReputation("data")
@@ -161,6 +162,8 @@ func main() {
 	mux.HandleFunc("GET /api/federation/approvals", withAuth(handleGetApprovals))
 	mux.HandleFunc("POST /api/federation/approvals/resolve", withAuth(handleResolveApproval))
 	mux.HandleFunc("POST /api/federation/token-budget", withAuth(handleSetTokenBudget))
+	mux.HandleFunc("POST /api/federation/join", handleJoinNetwork)
+	mux.HandleFunc("GET /api/federation/genesis", handleGetGenesis)
 
 	// CORS middleware
 	handler := corsMiddleware(mux)
@@ -420,6 +423,9 @@ func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Genesis hash info
+	status["genesis"] = GenesisInfo()
+
 	writeJSON(w, 200, status)
 }
 
@@ -616,6 +622,26 @@ func handleSetTokenBudget(w http.ResponseWriter, r *http.Request) {
 	}
 	nwm.SetTokenBudget(body.Budget)
 	writeJSON(w, 200, map[string]any{"token_budget": body.Budget})
+}
+
+// handleJoinNetwork processes a node join request (Genesis Hash verification).
+func handleJoinNetwork(w http.ResponseWriter, r *http.Request) {
+	var req NodeJoinRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	resp := HandleJoinRequest(req)
+	status := 200
+	if !resp.Accepted {
+		status = 403
+	}
+	writeJSON(w, status, resp)
+}
+
+// handleGetGenesis returns the genesis configuration (public endpoint).
+func handleGetGenesis(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, GenesisInfo())
 }
 
 // ============================================================
