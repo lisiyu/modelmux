@@ -123,7 +123,7 @@ type ModelDef struct {
 type Provider struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
-	Type        string     `json:"type"` // "openai_compatible", "coze", "sider"
+	Type        string     `json:"type"` // "openai_compatible", "coze", "sider", "anthropic"
 	BaseURL     string     `json:"base_url"`
 	APIKey      string     `json:"api_key"`
 	Enabled     bool       `json:"enabled"`

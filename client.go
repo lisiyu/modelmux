@@ -18,7 +18,7 @@ import (
 )
 
 // Client handles forwarding requests to upstream AI providers.
-// Supports: openai_compatible, sider, coze.
+// Supports: openai_compatible, sider, coze, anthropic.
 
 const siderChatURL = "https://sider.ai/api/v3/completion/text"
 
@@ -86,6 +86,8 @@ func doNonStream(p Provider, model string, messages []ChatMessage, extra map[str
 		return siderNonStream(p, model, messages)
 	case "coze":
 		return cozeNonStream(p, model, messages)
+	case "anthropic":
+		return anthropicNonStream(p, model, messages)
 	default:
 		return openaiNonStream(p, model, messages, extra)
 	}
@@ -98,6 +100,8 @@ func doStream(p Provider, model string, messages []ChatMessage, extra map[string
 		return siderStream(p, model, messages, w)
 	case "coze":
 		return cozeStream(p, model, messages, w)
+	case "anthropic":
+		return anthropicStream(p, model, messages, w)
 	default:
 		return openaiStream(p, model, messages, extra, w)
 	}
@@ -619,6 +623,200 @@ func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) e
 }
 
 // ============================================================
+// Anthropic Claude adapter (Messages API → OpenAI format)
+// ============================================================
+
+func anthropicBuildMessages(messages []ChatMessage) ([]map[string]any, string) {
+	// Anthropic Messages API requires system as a separate field,
+	// and messages must alternate user/assistant.
+	var systemMsg string
+	var out []map[string]any
+
+	for _, m := range messages {
+		switch m.Role {
+		case "system":
+			systemMsg = m.Content
+		case "assistant":
+			out = append(out, map[string]any{"role": "assistant", "content": m.Content})
+		default: // "user"
+			out = append(out, map[string]any{"role": "user", "content": m.Content})
+		}
+	}
+	return out, systemMsg
+}
+
+func anthropicNonStream(p Provider, model string, messages []ChatMessage) (*ChatResponse, error) {
+	anthMessages, systemMsg := anthropicBuildMessages(messages)
+
+	payload := map[string]any{
+		"model":      model,
+		"messages":   anthMessages,
+		"max_tokens": 8192,
+		"stream":     false,
+	}
+	if systemMsg != "" {
+		payload["system"] = systemMsg
+	}
+
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", p.BaseURL+"/v1/messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", p.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := proxyHTTPClient(p, 300*time.Second).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("anthropic upstream (%d): %s", resp.StatusCode, truncate(string(b), 300))
+	}
+
+	var result struct {
+		ID      string `json:"id"`
+		Type    string `json:"type"`
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		Model string `json:"model"`
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+		StopReason string `json:"stop_reason"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode anthropic response: %w", err)
+	}
+
+	var text strings.Builder
+	for _, c := range result.Content {
+		if c.Type == "text" {
+			text.WriteString(c.Text)
+		}
+	}
+	content := text.String()
+	stop := "stop"
+	if result.StopReason == "end_turn" {
+		stop = "stop"
+	}
+
+	return &ChatResponse{
+		ID:      result.ID,
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   model,
+		Choices: []Choice{{
+			Message:      &Msg{Role: "assistant", Content: &content},
+			FinishReason: &stop,
+		}},
+		Usage: &Usage{
+			PromptTokens:     result.Usage.InputTokens,
+			CompletionTokens: result.Usage.OutputTokens,
+			TotalTokens:      result.Usage.InputTokens + result.Usage.OutputTokens,
+		},
+	}, nil
+}
+
+func anthropicStream(p Provider, model string, messages []ChatMessage, w io.Writer) error {
+	anthMessages, systemMsg := anthropicBuildMessages(messages)
+
+	payload := map[string]any{
+		"model":      model,
+		"messages":   anthMessages,
+		"max_tokens": 8192,
+		"stream":     true,
+	}
+	if systemMsg != "" {
+		payload["system"] = systemMsg
+	}
+
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", p.BaseURL+"/v1/messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", p.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := proxyHTTPClient(p, 300*time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		writeSSEError(w, model, fmt.Sprintf("anthropic upstream (%d): %s", resp.StatusCode, truncate(string(b), 200)))
+		return nil
+	}
+
+	cmplID := fmt.Sprintf("chatcmpl-%s", randomString(24))
+	created := time.Now().Unix()
+	flusher, hasFlusher := w.(interface{ Flush() })
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "event: ") && !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		dataStr := strings.TrimSpace(line[6:])
+		if dataStr == "" {
+			continue
+		}
+
+		var event map[string]any
+		if json.Unmarshal([]byte(dataStr), &event) != nil {
+			continue
+		}
+
+		evtType, _ := event["type"].(string)
+		switch evtType {
+		case "content_block_delta":
+			if delta, ok := event["delta"].(map[string]any); ok {
+				if text, _ := delta["text"].(string); text != "" {
+					chunk := ChatChunk{
+						ID: cmplID, Object: "chat.completion.chunk",
+						Created: created, Model: model,
+						Choices: []Choice{{Delta: &Msg{Content: &text}}},
+					}
+					writeSSEChunk(w, chunk)
+					if hasFlusher {
+						flusher.Flush()
+					}
+				}
+			}
+		case "message_stop":
+			// done
+		}
+	}
+
+	// Final chunk
+	stop := "stop"
+	final := ChatChunk{
+		ID: cmplID, Object: "chat.completion.chunk",
+		Created: created, Model: model,
+		Choices: []Choice{{Delta: &Msg{}, FinishReason: &stop}},
+	}
+	writeSSEChunk(w, final)
+	if hasFlusher {
+		flusher.Flush()
+	}
+	fmt.Fprint(w, "data: [DONE]\n\n")
+	return nil
+}
+
+// ============================================================
 // SSE helpers
 // ============================================================
 
@@ -696,6 +894,32 @@ func testConnection(p Provider) map[string]any {
 			return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}
 		}
 		return map[string]any{"success": true, "message": "Sider token valid"}
+
+	case "anthropic":
+		if p.APIKey == "" {
+			return map[string]any{"success": false, "error": "Anthropic API key not configured"}
+		}
+		// Use a lightweight messages request to verify connectivity
+		testPayload := map[string]any{
+			"model":      "claude-3-haiku-20240307",
+			"max_tokens": 5,
+			"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+		}
+		testBody, _ := json.Marshal(testPayload)
+		testReq, _ := http.NewRequest("POST", p.BaseURL+"/v1/messages", bytes.NewReader(testBody))
+		testReq.Header.Set("Content-Type", "application/json")
+		testReq.Header.Set("x-api-key", p.APIKey)
+		testReq.Header.Set("anthropic-version", "2023-06-01")
+		testClient := proxyHTTPClient(p, 15*time.Second)
+		testResp, err := testClient.Do(testReq)
+		if err != nil {
+			return map[string]any{"success": false, "error": err.Error()}
+		}
+		testResp.Body.Close()
+		if testResp.StatusCode == 200 {
+			return map[string]any{"success": true, "message": "Anthropic API connected"}
+		}
+		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", testResp.StatusCode)}
 
 	default: // openai_compatible
 		if p.APIKey == "" {

@@ -44,6 +44,62 @@ var platformPricing = map[string]Price{
 	"tokenhub-enterprise:deepseek-v4-pro":           {0, 0},
 	"tokenhub-enterprise:deepseek-v4-flash-202605":  {0, 0},
 	"tokenhub-enterprise:deepseek-v4-pro-202606":    {0, 0},
+	// NVIDIA NIM (free tier)
+	"nvidia:meta/llama-4-maverick-17b-128e-instruct": {0, 0},
+	"nvidia:minimaxai/minimax-m2.7":                  {0, 0},
+	"nvidia:deepseek-ai/deepseek-v3.2":               {0, 0},
+	"nvidia:deepseek-ai/deepseek-r1-distill-llama-8b": {0, 0},
+	"nvidia:qwen/qwen3.5-397b-a17b":                  {0, 0},
+	"nvidia:qwen/qwen3-coder-480b":                   {0, 0},
+	"nvidia:moonshotai/kimi-k2.6":                    {0, 0},
+	"nvidia:z-ai/glm-5.1":                            {0, 0},
+	"nvidia:mistralai/mistral-large-3":                {0, 0},
+	"nvidia:stepfun-ai/step-3.5-flash":               {0, 0},
+	"nvidia:nvidia/nemotron-3-nano-30b-a3b":          {0, 0},
+	"nvidia:meta/llama-3.1-70b-instruct":             {0, 0},
+	"nvidia:google/gemma-3n-e4b":                     {0, 0},
+	"nvidia:mistralai/mistral-nemotron":               {0, 0},
+	// Anthropic Claude
+	"anthropic:claude-sonnet-4-20250514":     {3.00, 15.00},
+	"anthropic:claude-3-5-sonnet-20241022":   {3.00, 15.00},
+	"anthropic:claude-3-5-haiku-20241022":    {0.80, 4.00},
+	"anthropic:claude-3-opus-20240229":       {15.00, 75.00},
+	"anthropic:claude-3-haiku-20240307":      {0.25, 1.25},
+	// 百度千帆
+	"qianfan:ernie-4.5-turbo-32k":          {2.00, 6.00},
+	"qianfan:ernie-4.0-turbo-8k":           {4.00, 12.00},
+	"qianfan:ernie-speed-128k":             {0, 0},
+	"qianfan:deepseek-r1-distill-qwen-32b": {0.55, 2.19},
+	// Novita AI (low-cost aggregation)
+	"novita:deepseek/deepseek-r1":                      {0.55, 2.19},
+	"novita:deepseek/deepseek-v3":                      {0.27, 1.10},
+	"novita:qwen/qwen-3-235b-a22b":                    {0.20, 0.60},
+	"novita:meta-llama/llama-4-maverick-17b-128e-instruct": {0.20, 0.60},
+	"novita:meta-llama/llama-3.3-70b-instruct":         {0.40, 0.40},
+	// Fireworks AI
+	"fireworks:accounts/fireworks/models/deepseek-v3":                       {0.27, 1.10},
+	"fireworks:accounts/fireworks/models/deepseek-r1":                       {0.55, 2.19},
+	"fireworks:accounts/fireworks/models/qwen3-235b-a22b":                   {0.20, 0.60},
+	"fireworks:accounts/fireworks/models/llama4-maverick-instruct-basic":    {0.20, 0.60},
+	"fireworks:accounts/fireworks/models/llama-v3p3-70b-instruct":           {0.40, 0.40},
+	// Cohere
+	"cohere:command-r-plus-08-2024": {3.00, 15.00},
+	"cohere:command-r-08-2024":      {0.50, 1.50},
+	"cohere:command-a-03-2025":      {3.00, 15.00},
+	// Cerebras (free tier, very fast)
+	"cerebras:llama-3.3-70b": {0, 0},
+	"cerebras:llama-3.1-8b":  {0, 0},
+	"cerebras:llama3.1-8b":   {0, 0},
+	// 阶跃星辰
+	"stepfun:step-2-16k":    {2.00, 5.00},
+	"stepfun:step-1.5v-mini": {1.00, 2.00},
+	"stepfun:step-1-128k":   {0.80, 2.00},
+	"stepfun:step-1-8k":     {0.50, 1.00},
+	// 百川智能
+	"baichuan:Baichuan4-Turbo": {2.00, 2.00},
+	"baichuan:Baichuan4-Air":   {0.50, 0.50},
+	"baichuan:Baichuan4":       {4.00, 4.00},
+	"baichuan:Baichuan3-Turbo": {1.00, 1.00},
 }
 
 var modelPricing = map[string]Price{
