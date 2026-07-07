@@ -297,6 +297,13 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	owner := getRequestOwner(r)
 	p.Owner = owner // "" for admin, consumer_id for consumers
 
+	// If updating existing provider, preserve real API key when incoming is empty or masked
+	if existing, ok := pm.GetRaw(p.ID); ok {
+		if p.APIKey == "" || strings.Contains(p.APIKey, "...") {
+			p.APIKey = existing.APIKey
+		}
+	}
+
 	// Validate VMess proxy link
 	if strings.HasPrefix(p.Proxy, "vmess://") {
 		if _, err := ParseVMessLink(p.Proxy); err != nil {
@@ -350,6 +357,14 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	var updates map[string]any
 	readJSON(r, &updates)
+
+	// Remove masked API key from updates to prevent overwriting real key
+	if apiKey, ok := updates["api_key"]; ok {
+		if keyStr, isStr := apiKey.(string); isStr && strings.Contains(keyStr, "...") {
+			delete(updates, "api_key")
+		}
+	}
+
 	b, _ := json.Marshal(existing)
 	var merged Provider
 	json.Unmarshal(b, &merged)

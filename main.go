@@ -25,6 +25,14 @@ func main() {
 	initVMessManager("data")
 	initMultiUser("data")
 
+	// Initialize v3.0 federation components
+	initNode("data")
+	initFederation("data")
+	initGossip()
+	initReputation("data")
+	initCredits("data")
+	initMessages("data")
+
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
 	pm.save()
@@ -128,6 +136,24 @@ func main() {
 	mux.HandleFunc("GET /setup", handleSetupPage)
 	mux.HandleFunc("GET /login", handleLoginPage)
 
+	// Federation API (v3.0)
+	mux.HandleFunc("GET /api/federation/status", withAuth(handleFederationStatus))
+	mux.HandleFunc("GET /api/federation/pool", handleFederationPool)
+	mux.HandleFunc("POST /api/federation/gossip", handleFederationGossip)
+	mux.HandleFunc("POST /api/federation/announce", handleFederationAnnounce)
+	mux.HandleFunc("POST /api/federation/relay", handleRelayRequest)
+	mux.HandleFunc("GET /api/federation/reputations", handleGetReputations)
+	mux.HandleFunc("POST /api/federation/score", withAuth(handlePostScore))
+	mux.HandleFunc("GET /api/federation/credits", withAuth(handleGetCredits))
+	mux.HandleFunc("GET /api/federation/credits/history", withAuth(handleGetCreditHistory))
+	mux.HandleFunc("POST /api/federation/messages/send", withAuth(handleSendMessage))
+	mux.HandleFunc("GET /api/federation/messages/inbox", withAuth(handleGetInbox))
+	mux.HandleFunc("GET /api/federation/messages/outbox", withAuth(handleGetOutbox))
+	mux.HandleFunc("POST /api/federation/messages/read", withAuth(handleMarkAsRead))
+	mux.HandleFunc("GET /api/federation/config", withAuth(handleGetFederationConfig))
+	mux.HandleFunc("POST /api/federation/config", withAuth(handleSaveFederationConfig))
+	mux.HandleFunc("POST /api/federation/init-node", withAuth(handleInitNode))
+
 	// CORS middleware
 	handler := corsMiddleware(mux)
 
@@ -150,6 +176,12 @@ func main() {
 		slog.Info("shutting down...")
 		tracker.Stop()
 		healthChecker.stop()
+		if fed != nil {
+			fed.stop()
+		}
+		if gossip != nil {
+			gossip.stop()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		server.Shutdown(ctx)
@@ -292,17 +324,160 @@ func readJSON(r *http.Request, v any) error {
 // ============================================================
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{
+	status := map[string]any{
 		"status":           "ok",
-		"version":          "2.0.0",
+		"version":          "3.0.0",
 		"providers_enabled": len(pm.Enabled()),
 		"models_available": len(pm.AllModels()),
-	})
+	}
+	if fed != nil && fed.IsEnabled() {
+		pool := fed.GetTrustPool()
+		seedCount := 0
+		for _, n := range pool.Nodes {
+			if n.SeedNode {
+				seedCount++
+			}
+		}
+		status["federation"] = map[string]any{
+			"enabled":    true,
+			"relay":      fed.IsRelayEnabled(),
+			"node_id":    node.NodeID(),
+			"nodes":      len(pool.Nodes),
+			"seed_nodes": seedCount,
+		}
+	} else {
+		status["federation"] = map[string]any{"enabled": false}
+	}
+	writeJSON(w, 200, status)
 }
 
 func handleListModels(w http.ResponseWriter, r *http.Request) {
 	models := pm.AllModels()
 	writeJSON(w, 200, ModelListResponse{Object: "list", Data: models})
+}
+
+// handleFederationStatus returns a comprehensive federation status overview.
+// GET /api/federation/status
+func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
+	if fed == nil {
+		writeJSON(w, 200, map[string]any{"enabled": false})
+		return
+	}
+
+	pool := fed.GetTrustPool()
+	seedCount := 0
+	for _, n := range pool.Nodes {
+		if n.SeedNode {
+			seedCount++
+		}
+	}
+	status := map[string]any{
+		"enabled":      fed.IsEnabled(),
+		"relay":        fed.IsRelayEnabled(),
+		"pool_version": pool.Version,
+		"total_nodes":  len(pool.Nodes),
+		"seed_nodes":   seedCount,
+		"active_nodes": len(fed.GetActiveNodes()),
+	}
+
+	if node != nil && node.IsInitialized() {
+		info := node.GetInfo()
+		status["node"] = map[string]any{
+			"id":          info.NodeID,
+			"pub_key":     node.PubKeyB64(),
+			"github_user": info.GitHubUser,
+			"joined_at":   info.JoinedAt,
+		}
+	}
+
+	if repMgr != nil {
+		allReps := repMgr.GetAllReputations()
+		status["reputation"] = map[string]any{
+			"tracked_nodes": len(allReps),
+		}
+	}
+
+	if credits != nil {
+		status["credits"] = map[string]any{
+			"balance":     credits.GetBalance(),
+			"transactions": len(credits.transactions),
+		}
+	}
+
+	if msgMgr != nil {
+		status["messages"] = map[string]any{
+			"inbox":  len(msgMgr.GetInbox(0)),
+			"outbox": len(msgMgr.GetOutbox(0)),
+			"unread": msgMgr.GetUnreadCount(),
+		}
+	}
+
+	writeJSON(w, 200, status)
+}
+
+// handleGetFederationConfig returns the current federation configuration.
+func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{
+		"federation_enabled":       cfg.Get("federation_enabled", "false"),
+		"federation_relay_enabled": cfg.Get("federation_relay_enabled", "false"),
+		"federation_registry_url":  cfg.Get("federation_registry_url", ""),
+		"federation_registry_repo": cfg.Get("federation_registry_repo", "lisiyu/modelmux"),
+		"gossip_interval_s":        cfg.Get("gossip_interval_s", "30"),
+		"heartbeat_interval_s":     cfg.Get("heartbeat_interval_s", "60"),
+	})
+}
+
+// handleSaveFederationConfig saves federation configuration.
+func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
+	var body map[string]string
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	for _, key := range []string{
+		"federation_enabled", "federation_relay_enabled",
+		"federation_registry_url", "federation_registry_repo",
+		"gossip_interval_s", "heartbeat_interval_s",
+	} {
+		if v, ok := body[key]; ok {
+			cfg.Set(key, v)
+		}
+	}
+	cfg.save()
+
+	writeJSON(w, 200, map[string]string{"status": "saved"})
+}
+
+// handleInitNode initializes the node identity with GitHub info.
+func handleInitNode(w http.ResponseWriter, r *http.Request) {
+	if node == nil {
+		writeError(w, 500, "node not initialized")
+		return
+	}
+
+	var body struct {
+		GitHubUser string `json:"github_user"`
+		GitHubID   int64  `json:"github_id"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	if body.GitHubUser == "" {
+		writeError(w, 400, "github_user is required")
+		return
+	}
+
+	node.SetGitHub(body.GitHubUser, body.GitHubID)
+	node.save()
+
+	writeJSON(w, 200, map[string]any{
+		"node_id":     node.NodeID(),
+		"pub_key":     node.PubKeyB64(),
+		"github_user": body.GitHubUser,
+	})
 }
 
 // ============================================================

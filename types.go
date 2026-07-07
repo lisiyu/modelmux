@@ -319,3 +319,148 @@ type CozeResponse struct {
 		Usage          map[string]any `json:"usage,omitempty"`
 	} `json:"data"`
 }
+
+// ============================================================
+// Federation types (v3.0)
+// ============================================================
+
+// NodeInfo represents a node in the federation network.
+type NodeInfo struct {
+	NodeID         string             `json:"node_id"`
+	GitHubUser     string             `json:"github_user"`
+	GitHubID       int64              `json:"github_id,omitempty"`
+	Endpoint       string             `json:"endpoint"`
+	PubKey         string             `json:"pub_key"` // ed25519 base64
+	SharedModels   []string           `json:"shared_models"`
+	SharedProviders []SharedProvider  `json:"shared_providers"`
+	JoinedAt       string             `json:"joined_at"`
+	LastSeen       string             `json:"last_seen"`
+	Status         string             `json:"status"` // active, inactive, suspended
+	SeedNode       bool               `json:"seed_node"`
+	Reputation     int                `json:"reputation"`
+	Version        string             `json:"version"`
+	InviteBy       string             `json:"invite_by,omitempty"`
+}
+
+// SharedProvider is a provider advertised by a remote node (no API key!).
+type SharedProvider struct {
+	ProviderID string   `json:"provider_id"`
+	Platform   string   `json:"platform"`
+	Models     []string `json:"models"`
+	Capacity   int      `json:"capacity"` // 0-100 estimated remaining capacity
+}
+
+// TrustPool is the global node registry, stored in GitHub.
+type TrustPool struct {
+	Version   int        `json:"version"`
+	UpdatedAt string     `json:"updated_at"`
+	Registry  string     `json:"registry"`
+	Nodes     []NodeInfo `json:"nodes"`
+}
+
+// GossipMessage is exchanged between nodes during gossip rounds.
+type GossipMessage struct {
+	Type             string `json:"type"` // "sync", "announce", "score", "heartbeat"
+	FromNode         string `json:"from_node"`
+	TrustPoolVersion int    `json:"trust_pool_version"`
+	ScoreDigest      string `json:"score_digest,omitempty"`
+	Timestamp        string `json:"timestamp"`
+	Signature        string `json:"signature"`
+	Payload          []byte `json:"payload,omitempty"` // optional embedded data
+}
+
+// PeerScore is a rating one node gives to another.
+type PeerScore struct {
+	FromNode     string  `json:"from_node"`
+	TargetNode   string  `json:"target_node"`
+	Availability float64 `json:"availability"` // 0-100
+	Latency      float64 `json:"latency"`      // 0-100
+	Accuracy     float64 `json:"accuracy"`     // 0-100
+	Comment      string  `json:"comment,omitempty"`
+	Timestamp    string  `json:"timestamp"`
+	Signature    string  `json:"signature"`
+}
+
+// ProviderAnnouncement broadcasts a new/updated provider to the federation.
+type ProviderAnnouncement struct {
+	NodeID     string   `json:"node_id"`
+	ProviderID string   `json:"provider_id"`
+	Platform   string   `json:"platform"`
+	Models     []string `json:"models"`
+	Capacity   int      `json:"capacity"`
+	Timestamp  string   `json:"timestamp"`
+	Signature  string   `json:"signature"`
+}
+
+// RelayRequest is sent to a remote node for provider relay.
+type RelayRequest struct {
+	Model    string        `json:"model"`
+	Messages []ChatMessage `json:"messages"`
+	Stream   bool          `json:"stream"`
+	Extra    map[string]any `json:"extra,omitempty"`
+}
+
+// RelayResponse wraps the relay result.
+type RelayResponse struct {
+	Success   bool          `json:"success"`
+	Data      []byte        `json:"data,omitempty"`      // raw response body
+	Error     string        `json:"error,omitempty"`
+	Tokens    int           `json:"tokens,omitempty"`
+	LatencyMS float64      `json:"latency_ms,omitempty"`
+}
+
+// FederationVote records a vote on a pending node join request.
+type FederationVote struct {
+	VoterNode  string `json:"voter_node"`
+	TargetNode string `json:"target_node"`
+	Approve    bool   `json:"approve"`
+	Comment    string `json:"comment,omitempty"`
+	Timestamp  string `json:"timestamp"`
+	Signature  string `json:"signature"`
+}
+
+// PendingJoinRequest is a node waiting for federation approval.
+type PendingJoinRequest struct {
+	NodeID       string   `json:"node_id"`
+	GitHubUser   string   `json:"github_user"`
+	Endpoint     string   `json:"endpoint"`
+	PubKey       string   `json:"pub_key"`
+	SharedModels []string `json:"shared_models"`
+	RequestedAt  string   `json:"requested_at"`
+	InviteBy     string   `json:"invite_by,omitempty"`
+	Votes        []FederationVote `json:"votes"`
+	Status       string   `json:"status"` // pending, approved, rejected
+	AutoVerified bool     `json:"auto_verified"` // passed auto health check
+}
+
+// CreditTransaction records a credit change.
+type CreditTransaction struct {
+	ID        string `json:"id"`
+	FromNode  string `json:"from_node"` // empty for earning
+	ToNode    string `json:"to_node"`   // empty for earning
+	Amount    int    `json:"amount"`    // positive=credit, negative=debit
+	Reason    string `json:"reason"`    // "relay_call", "invite", "message", etc.
+	Timestamp string `json:"timestamp"`
+}
+
+// NodeCredits tracks a node's credit balance.
+type NodeCredits struct {
+	NodeID       string              `json:"node_id"`
+	Balance      int                 `json:"balance"`
+	TotalEarned  int                 `json:"total_earned"`
+	TotalSpent   int                 `json:"total_spent"`
+	Transactions []CreditTransaction `json:"transactions,omitempty"`
+}
+
+// FederationConfig holds federation-specific configuration.
+type FederationConfig struct {
+	Enabled          bool   `json:"enabled"`
+	NodeID           string `json:"node_id"`
+	SeedNode         bool   `json:"seed_node"`
+	RelayEnabled     bool   `json:"relay_enabled"`
+	MaxConcurrentRelay int  `json:"max_concurrent_relay"`
+	RegistryURL      string `json:"registry_url"`      // GitHub raw URL
+	RegistryRepo     string `json:"registry_repo"`     // "lisiyu/modelmux"
+	GossipIntervalS  int    `json:"gossip_interval_s"` // default 30
+	HeartbeatIntervalS int  `json:"heartbeat_interval_s"` // default 60
+}
