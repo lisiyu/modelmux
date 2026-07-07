@@ -59,6 +59,9 @@ func main() {
 	// Initialize signed key store (Phase 2)
 	initKeyStore("data")
 
+	// Initialize open key store (Phase 2 Economic Model)
+	initOpenKeyStore("data")
+
 	// Start heartbeat loop (Phase 2)
 	startHeartbeatLoop()
 
@@ -244,6 +247,14 @@ func main() {
 	mux.HandleFunc("DELETE /api/network/keys/{consumer_id}", withAuth(handleNetworkKeyRevoke))
 	mux.HandleFunc("POST /api/network/keys/validate", handleNetworkKeyValidate)
 	mux.HandleFunc("GET /api/network/contributions", withAuth(handleNetworkContributions))
+
+	// Phase 2 Economic Model — Trial Pool & Open Keys
+	mux.HandleFunc("GET /api/network/trial", withAuth(handleNetworkTrialPool))
+	mux.HandleFunc("POST /api/network/trial/issue", withAuth(handleNetworkTrialIssue))
+	mux.HandleFunc("GET /api/network/open-keys", withAuth(handleNetworkOpenKeys))
+	mux.HandleFunc("POST /api/network/open-keys/unbound", withAuth(handleNetworkOpenKeyUnboundIssue))
+	mux.HandleFunc("POST /api/network/open-keys/bound", withAuth(handleNetworkOpenKeyBoundIssue))
+	mux.HandleFunc("GET /api/network/unlock-status", withAuth(handleNetworkUnlockStatus))
 
 	// Node Heartbeat & Discovery (Phase 2)
 	mux.HandleFunc("POST /api/network/heartbeat", handleNetworkHeartbeat)

@@ -404,6 +404,23 @@ func RecordContribution(fromNodeID string, tokensUsed int64) {
 		points = 1
 	}
 	netMgr.config.ContribPoints += points
+
+	// Phase 2: Track contribution for unlock state
+	if netMgr.config.NodeUnlockStates == nil {
+		netMgr.config.NodeUnlockStates = make(map[string]*NodeUnlockState)
+	}
+	if fromNodeID != "" {
+		state, exists := netMgr.config.NodeUnlockStates[fromNodeID]
+		if !exists {
+			state = &NodeUnlockState{
+				NodeID:   fromNodeID,
+				Unlocked: false,
+			}
+			netMgr.config.NodeUnlockStates[fromNodeID] = state
+		}
+		state.ContribPoints += points
+	}
+
 	netMgr.doSave()
 }
 

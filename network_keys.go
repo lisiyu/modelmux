@@ -231,24 +231,61 @@ func (ks *KeyStore) SaveAsync() {
 
 // ValidateKey parses and validates a mk_ format key.
 // Returns the payload if valid, or an error.
+// Supports all key types: standard, trial, open_unbound, open_bound.
 func ValidateKey(mkKey string) (*KeyPayload, error) {
 	if !strings.HasPrefix(mkKey, "mk_") {
 		return nil, fmt.Errorf("not a signed key (missing mk_ prefix)")
 	}
 
-	// Strip mk_ prefix
-	rest := mkKey[3:]
+	keyType := ClassifyKey(mkKey)
+	var rest string
+	var consumerID string
 
-	// Split into consumer_id.payload_b64.signature_hex
-	parts := strings.SplitN(rest, ".", 3)
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid key format: expected mk_{consumer_id}.{payload}.{signature}")
+	switch keyType {
+	case KeyTypeTrial:
+		// Format: mk_trial_{node_id}_{timestamp}.{payload_b64}.{sig_hex}
+		rest = mkKey[7:] // strip "mk_trial_"
+		parts := strings.SplitN(rest, ".", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid trial key format")
+		}
+		// consumer_id = "trial_{node_id}_{timestamp}"
+		consumerID = "trial_" + parts[0]
+		return validateKeyParts(consumerID, parts[1], parts[2])
+
+	case KeyTypeOpenUnbound:
+		// Format: mk_open_{random}.{payload_b64}.{sig_hex}
+		rest = mkKey[8:] // strip "mk_open_"
+		parts := strings.SplitN(rest, ".", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid open unbound key format")
+		}
+		consumerID = "open_unbound_" + parts[0]
+		return validateKeyParts(consumerID, parts[1], parts[2])
+
+	case KeyTypeOpenBound:
+		// Format: mk_open_{node_id}_{random}.{payload_b64}.{sig_hex}
+		rest = mkKey[8:] // strip "mk_open_"
+		parts := strings.SplitN(rest, ".", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid open bound key format")
+		}
+		consumerID = "open_bound_" + parts[0]
+		return validateKeyParts(consumerID, parts[1], parts[2])
+
+	default:
+		// Standard: mk_{consumer_id}.{payload_b64}.{signature_hex}
+		rest = mkKey[3:] // strip "mk_"
+		parts := strings.SplitN(rest, ".", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid key format: expected mk_{consumer_id}.{payload}.{signature}")
+		}
+		return validateKeyParts(parts[0], parts[1], parts[2])
 	}
+}
 
-	consumerID := parts[0]
-	payloadB64 := parts[1]
-	sigHex := parts[2]
-
+// validateKeyParts validates the payload and signature parts of a key
+func validateKeyParts(consumerID, payloadB64, sigHex string) (*KeyPayload, error) {
 	// Decode payload
 	payloadJSON, err := base64.RawURLEncoding.DecodeString(payloadB64)
 	if err != nil {
@@ -284,6 +321,26 @@ func ValidateKey(mkKey string) (*KeyPayload, error) {
 	// Check quota
 	if payload.Quota > 0 && payload.Used >= payload.Quota {
 		return nil, fmt.Errorf("quota exhausted: used=%d, quota=%d", payload.Used, payload.Quota)
+	}
+
+	// For open unbound keys, skip issuer verification (no issuer)
+	if payload.Iss == "" {
+		// Open unbound: verify with this node's key
+		if node == nil || !node.IsInitialized() {
+			return nil, fmt.Errorf("cannot verify: node not initialized")
+		}
+		node.mu.RLock()
+		pub := node.pubKey
+		node.mu.RUnlock()
+
+		sigBytes, err := hex.DecodeString(sigHex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid signature hex: %w", err)
+		}
+		if !ed25519.Verify(pub, []byte(payloadB64), sigBytes) {
+			return nil, fmt.Errorf("signature verification failed")
+		}
+		return &payload, nil
 	}
 
 	// Get issuer's public key from route table or known peers
@@ -511,5 +568,591 @@ func handleNetworkContributions(w http.ResponseWriter, r *http.Request) {
 	}
 	netMgr.mu.RUnlock()
 
+	writeJSON(w, 200, status)
+}
+
+// ============================================================
+// Phase 2 Economic Model — Trial Pool & Open Keys
+// ============================================================
+
+// KeyType represents the type of a key
+type KeyType string
+
+const (
+	KeyTypeStandard     KeyType = "standard"      // Standard consumer key (mk_{consumer_id}...)
+	KeyTypeTrial        KeyType = "trial"          // Trial pool key (mk_trial_{node_id}_{ts})
+	KeyTypeOpenUnbound  KeyType = "open_unbound"   // Open unbound key (mk_open_xxxxx)
+	KeyTypeOpenBound    KeyType = "open_bound"     // Open bound key (mk_open_{node_id}_xxxxx)
+)
+
+// Default trial quota (tokens)
+const DefaultTrialQuota int64 = 50000
+
+// Default open unbound quota
+const DefaultOpenUnboundQuota int64 = 1000
+
+// Total open quota pool for bound keys
+const TotalOpenBoundQuota int64 = 100000
+
+// ============================================================
+// Trial Pool Key
+// ============================================================
+
+// TrialKeyInfo holds information about a trial pool key
+type TrialKeyInfo struct {
+	NodeID    string `json:"node_id"`
+	Key       string `json:"key"`
+	Quota     int64  `json:"quota"`
+	Used      int64  `json:"used"`
+	IssuedAt  string `json:"issued_at"`
+	Active    bool   `json:"active"`
+}
+
+// IssueTrialKey creates a trial key for a node joining the shared network.
+// Format: mk_trial_{node_id}_{timestamp}.{payload_base64}.{signature_hex}
+func (ks *KeyStore) IssueTrialKey(nodeID string, quota int64) (string, *TrialKeyInfo, error) {
+	if node == nil || !node.IsInitialized() {
+		return "", nil, fmt.Errorf("node identity not initialized")
+	}
+	if quota <= 0 {
+		quota = DefaultTrialQuota
+	}
+
+	now := time.Now()
+	timestamp := now.Unix()
+	consumerID := fmt.Sprintf("trial_%s_%d", nodeID, timestamp)
+
+	payload := KeyPayload{
+		Sub:    consumerID,
+		Iss:    nodeID,
+		Quota:  quota,
+		Used:   0,
+		Models: []string{}, // all models allowed for trial
+		Iat:    now.Unix(),
+		Exp:    now.Add(7 * 24 * time.Hour).Unix(), // 7 days
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal payload: %w", err)
+	}
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	node.mu.RLock()
+	privKey := node.privKey
+	node.mu.RUnlock()
+	if privKey == nil {
+		return "", nil, fmt.Errorf("node private key not available")
+	}
+	sig := ed25519.Sign(privKey, []byte(payloadB64))
+	sigHex := hex.EncodeToString(sig)
+
+	fullKey := fmt.Sprintf("mk_trial_%s_%d.%s.%s", nodeID, timestamp, payloadB64, sigHex)
+
+	// Store the key
+	ik := &IssuedKey{
+		ConsumerID: consumerID,
+		Key:        fullKey,
+		Payload:    payload,
+		IssuedAt:   now.Format(time.RFC3339),
+		Revoked:    false,
+	}
+
+	ks.mu.Lock()
+	ks.keys[consumerID] = ik
+	ks.mu.Unlock()
+	ks.save()
+
+	info := &TrialKeyInfo{
+		NodeID:   nodeID,
+		Key:      fullKey,
+		Quota:    quota,
+		Used:     0,
+		IssuedAt: now.Format(time.RFC3339),
+		Active:   true,
+	}
+
+	// Store in trial pool
+	if netMgr != nil {
+		netMgr.AddTrialKey(info)
+	}
+
+	slog.Info("issued trial key", "node_id", nodeID, "quota", quota, "key", fullKey[:min(len(fullKey), 30)]+"...")
+	return fullKey, info, nil
+}
+
+// ============================================================
+// Open Keys — Unbound & Bound
+// ============================================================
+
+// OpenKeyInfo holds information about an open key
+type OpenKeyInfo struct {
+	Key        string  `json:"key"`
+	Type       KeyType `json:"type"`        // open_unbound or open_bound
+	NodeID     string  `json:"node_id"`     // bound node_id (empty for unbound)
+	Quota      int64   `json:"quota"`
+	Used       int64   `json:"used"`
+	IssuedAt   string  `json:"issued_at"`
+	Active     bool    `json:"active"`
+	ConsumerID string  `json:"consumer_id"`
+}
+
+// openKeyStore manages all open keys
+type openKeyStore struct {
+	mu        sync.RWMutex
+	unbound   []*OpenKeyInfo
+	bound     map[string]*OpenKeyInfo // keyed by node_id
+	dataPath  string
+}
+
+var openKeys *openKeyStore
+
+func initOpenKeyStore(dataDir string) {
+	openKeys = &openKeyStore{
+		unbound:  make([]*OpenKeyInfo, 0),
+		bound:    make(map[string]*OpenKeyInfo),
+		dataPath: filepath.Join(dataDir, "open_keys.json"),
+	}
+	openKeys.load()
+	slog.Info("open key store initialized", "unbound", len(openKeys.unbound), "bound", len(openKeys.bound))
+}
+
+func (oks *openKeyStore) load() {
+	b, err := os.ReadFile(oks.dataPath)
+	if err != nil {
+		return
+	}
+	var data struct {
+		Unbound []*OpenKeyInfo            `json:"unbound"`
+		Bound   map[string]*OpenKeyInfo   `json:"bound"`
+	}
+	if err := json.Unmarshal(b, &data); err != nil {
+		return
+	}
+	oks.mu.Lock()
+	defer oks.mu.Unlock()
+	if data.Unbound != nil {
+		oks.unbound = data.Unbound
+	}
+	if data.Bound != nil {
+		oks.bound = data.Bound
+	}
+}
+
+func (oks *openKeyStore) save() {
+	oks.mu.RLock()
+	defer oks.mu.RUnlock()
+	oks.doSave()
+}
+
+func (oks *openKeyStore) doSave() {
+	data := struct {
+		Unbound []*OpenKeyInfo            `json:"unbound"`
+		Bound   map[string]*OpenKeyInfo   `json:"bound"`
+	}{
+		Unbound: oks.unbound,
+		Bound:   oks.bound,
+	}
+	b, _ := json.MarshalIndent(data, "", "  ")
+	os.MkdirAll(filepath.Dir(oks.dataPath), 0755)
+	os.WriteFile(oks.dataPath, b, 0600)
+}
+
+// IssueOpenKeyUnbound creates an unbound open key for zero-barrier experience.
+// Format: mk_open_{random_hex}
+func (oks *openKeyStore) IssueOpenKeyUnbound() (string, *OpenKeyInfo, error) {
+	if node == nil || !node.IsInitialized() {
+		return "", nil, fmt.Errorf("node identity not initialized")
+	}
+
+	now := time.Now()
+	randBytes := make([]byte, 8)
+	for i := range randBytes {
+		randBytes[i] = byte(now.UnixNano() >> (i * 8))
+	}
+	randHex := hex.EncodeToString(randBytes)
+	consumerID := fmt.Sprintf("open_unbound_%s", randHex)
+
+	payload := KeyPayload{
+		Sub:    consumerID,
+		Iss:    "", // no issuer for unbound
+		Quota:  DefaultOpenUnboundQuota,
+		Used:   0,
+		Models: []string{},
+		Iat:    now.Unix(),
+		Exp:    now.Add(24 * time.Hour).Unix(), // 24 hours
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal payload: %w", err)
+	}
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	node.mu.RLock()
+	privKey := node.privKey
+	node.mu.RUnlock()
+	if privKey == nil {
+		return "", nil, fmt.Errorf("node private key not available")
+	}
+	sig := ed25519.Sign(privKey, []byte(payloadB64))
+	sigHex := hex.EncodeToString(sig)
+
+	fullKey := fmt.Sprintf("mk_open_%s.%s.%s", randHex, payloadB64, sigHex)
+
+	info := &OpenKeyInfo{
+		Key:        fullKey,
+		Type:       KeyTypeOpenUnbound,
+		NodeID:     "",
+		Quota:      DefaultOpenUnboundQuota,
+		Used:       0,
+		IssuedAt:   now.Format(time.RFC3339),
+		Active:     true,
+		ConsumerID: consumerID,
+	}
+
+	oks.mu.Lock()
+	oks.unbound = append(oks.unbound, info)
+	oks.mu.Unlock()
+	oks.save()
+
+	slog.Info("issued open unbound key", "key", fullKey[:min(len(fullKey), 30)]+"...")
+	return fullKey, info, nil
+}
+
+// IssueOpenKeyBound creates a bound open key for a specific node.
+// Format: mk_open_{node_id}_{random_hex}
+func (oks *openKeyStore) IssueOpenKeyBound(nodeID string) (string, *OpenKeyInfo, error) {
+	if node == nil || !node.IsInitialized() {
+		return "", nil, fmt.Errorf("node identity not initialized")
+	}
+	if nodeID == "" {
+		return "", nil, fmt.Errorf("node_id is required")
+	}
+
+	// Calculate quota based on reputation and contribution
+	quota := CalculateOpenKeyQuota(nodeID)
+	if quota < 100 {
+		quota = 100 // minimum
+	}
+
+	now := time.Now()
+	randBytes := make([]byte, 8)
+	for i := range randBytes {
+		randBytes[i] = byte(now.UnixNano() >> (i * 8))
+	}
+	randHex := hex.EncodeToString(randBytes)
+	consumerID := fmt.Sprintf("open_bound_%s_%s", nodeID, randHex)
+
+	payload := KeyPayload{
+		Sub:    consumerID,
+		Iss:    nodeID,
+		Quota:  quota,
+		Used:   0,
+		Models: []string{},
+		Iat:    now.Unix(),
+		Exp:    now.Add(30 * 24 * time.Hour).Unix(), // 30 days
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal payload: %w", err)
+	}
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	node.mu.RLock()
+	privKey := node.privKey
+	node.mu.RUnlock()
+	if privKey == nil {
+		return "", nil, fmt.Errorf("node private key not available")
+	}
+	sig := ed25519.Sign(privKey, []byte(payloadB64))
+	sigHex := hex.EncodeToString(sig)
+
+	fullKey := fmt.Sprintf("mk_open_%s_%s.%s.%s", nodeID, randHex, payloadB64, sigHex)
+
+	info := &OpenKeyInfo{
+		Key:        fullKey,
+		Type:       KeyTypeOpenBound,
+		NodeID:     nodeID,
+		Quota:      quota,
+		Used:       0,
+		IssuedAt:   now.Format(time.RFC3339),
+		Active:     true,
+		ConsumerID: consumerID,
+	}
+
+	oks.mu.Lock()
+	oks.bound[nodeID] = info
+	oks.mu.Unlock()
+	oks.save()
+
+	slog.Info("issued open bound key", "node_id", nodeID, "quota", quota, "key", fullKey[:min(len(fullKey), 30)]+"...")
+	return fullKey, info, nil
+}
+
+// GetActiveUnboundKeys returns all active unbound open keys
+func (oks *openKeyStore) GetActiveUnboundKeys() []*OpenKeyInfo {
+	oks.mu.RLock()
+	defer oks.mu.RUnlock()
+	result := make([]*OpenKeyInfo, 0)
+	for _, k := range oks.unbound {
+		if k.Active {
+			result = append(result, k)
+		}
+	}
+	return result
+}
+
+// GetBoundKeys returns all bound open keys
+func (oks *openKeyStore) GetBoundKeys() map[string]*OpenKeyInfo {
+	oks.mu.RLock()
+	defer oks.mu.RUnlock()
+	result := make(map[string]*OpenKeyInfo)
+	for k, v := range oks.bound {
+		result[k] = v
+	}
+	return result
+}
+
+// RecordOpenKeyUsage records usage for an open key
+func (oks *openKeyStore) RecordOpenKeyUsage(consumerID string) {
+	oks.mu.Lock()
+	defer oks.mu.Unlock()
+	for _, k := range oks.unbound {
+		if k.ConsumerID == consumerID {
+			k.Used++
+			return
+		}
+	}
+	for _, k := range oks.bound {
+		if k.ConsumerID == consumerID {
+			k.Used++
+			return
+		}
+	}
+}
+
+// CalculateOpenKeyQuota calculates the quota for a bound open key.
+// quota = totalOpenQuota * (0.4 * reputation/totalRep + 0.6 * contribution/totalContrib)
+func CalculateOpenKeyQuota(nodeID string) int64 {
+	if netMgr == nil {
+		return 1000 // default
+	}
+
+	netMgr.mu.RLock()
+	defer netMgr.mu.RUnlock()
+
+	// Get network-wide totals
+	var totalRep float64
+	var totalContrib int64
+	nodeRep := 0.0
+	nodeContrib := int64(0)
+
+	// Calculate from peers
+	for _, peer := range netMgr.config.Peers {
+		totalRep += peer.TrustScore
+		if peer.NodeID == nodeID {
+			nodeRep = peer.TrustScore
+		}
+	}
+
+	// Add self
+	selfContrib := netMgr.config.ContribPoints
+	totalContrib += selfContrib
+	if nodeID == netMgr.config.NodeID {
+		nodeContrib = selfContrib
+	}
+	for _, peer := range netMgr.config.Peers {
+		// Approximate peer contribution from route table stats
+		peerContrib := int64(peer.TrustScore * 1000) // approximate
+		totalContrib += peerContrib
+		if peer.NodeID == nodeID {
+			nodeContrib = peerContrib
+		}
+	}
+
+	// Avoid division by zero
+	if totalRep == 0 {
+		totalRep = 1
+	}
+	if totalContrib == 0 {
+		totalContrib = 1
+	}
+
+	repShare := nodeRep / totalRep
+	contribShare := float64(nodeContrib) / float64(totalContrib)
+
+	quota := float64(TotalOpenBoundQuota) * (0.4*repShare + 0.6*contribShare)
+	if quota < 100 {
+		quota = 100
+	}
+
+	return int64(quota)
+}
+
+// ============================================================
+// Key Classification Helper
+// ============================================================
+
+// ClassifyKey determines the type of a mk_ key
+func ClassifyKey(mkKey string) KeyType {
+	if strings.HasPrefix(mkKey, "mk_trial_") {
+		return KeyTypeTrial
+	}
+	if strings.HasPrefix(mkKey, "mk_open_") {
+		// Check if it contains a node_id (bound) or not (unbound)
+		rest := strings.TrimPrefix(mkKey, "mk_open_")
+		// Format: {random} or {node_id}_{random}
+		// Node IDs start with mmx-, so if the first segment starts with mmx-, it's bound
+		parts := strings.SplitN(rest, ".", 2)
+		if len(parts) > 0 {
+			prefix := parts[0]
+			// Check if prefix contains node_id pattern
+			if strings.Contains(prefix, "mmx-") {
+				return KeyTypeOpenBound
+			}
+		}
+		return KeyTypeOpenUnbound
+	}
+	if strings.HasPrefix(mkKey, "mk_") {
+		return KeyTypeStandard
+	}
+	return ""
+}
+
+// ============================================================
+// API Handlers — Trial Pool & Open Keys
+// ============================================================
+
+// GET /api/network/trial — get trial pool info
+func handleNetworkTrialPool(w http.ResponseWriter, r *http.Request) {
+	if !netMgr.IsSharedMode() {
+		writeJSON(w, 200, map[string]any{"trial_keys": []any{}, "message": "shared network not active"})
+		return
+	}
+
+	trialKeys := netMgr.GetTrialKeys()
+	writeJSON(w, 200, map[string]any{
+		"trial_keys": trialKeys,
+		"count":      len(trialKeys),
+	})
+}
+
+// POST /api/network/trial/issue (JWT) — issue a new trial key
+func handleNetworkTrialIssue(w http.ResponseWriter, r *http.Request) {
+	if !netMgr.IsSharedMode() {
+		writeError(w, 400, "shared network not active")
+		return
+	}
+
+	var body struct {
+		NodeID string `json:"node_id"`
+		Quota  int64  `json:"quota"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	nodeID := body.NodeID
+	if nodeID == "" {
+		nodeID = netMgr.GetNodeID()
+	}
+	if body.Quota <= 0 {
+		body.Quota = DefaultTrialQuota
+	}
+
+	key, info, err := keyStore.IssueTrialKey(nodeID, body.Quota)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"status": "issued",
+		"key":    key,
+		"info":   info,
+	})
+}
+
+// GET /api/network/open-keys — get all open keys
+func handleNetworkOpenKeys(w http.ResponseWriter, r *http.Request) {
+	if !netMgr.IsSharedMode() {
+		writeJSON(w, 200, map[string]any{"unbound": []any{}, "bound": []any{}, "message": "shared network not active"})
+		return
+	}
+
+	unbound := openKeys.GetActiveUnboundKeys()
+	bound := openKeys.GetBoundKeys()
+
+	writeJSON(w, 200, map[string]any{
+		"unbound": unbound,
+		"bound":   bound,
+	})
+}
+
+// POST /api/network/open-keys/unbound (JWT) — issue an unbound open key
+func handleNetworkOpenKeyUnboundIssue(w http.ResponseWriter, r *http.Request) {
+	if !netMgr.IsSharedMode() {
+		writeError(w, 400, "shared network not active")
+		return
+	}
+
+	key, info, err := openKeys.IssueOpenKeyUnbound()
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"status": "issued",
+		"key":    key,
+		"info":   info,
+	})
+}
+
+// POST /api/network/open-keys/bound (JWT) — issue a bound open key
+func handleNetworkOpenKeyBoundIssue(w http.ResponseWriter, r *http.Request) {
+	if !netMgr.IsSharedMode() {
+		writeError(w, 400, "shared network not active")
+		return
+	}
+
+	var body struct {
+		NodeID string `json:"node_id"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	nodeID := body.NodeID
+	if nodeID == "" {
+		writeError(w, 400, "node_id is required")
+		return
+	}
+
+	key, info, err := openKeys.IssueOpenKeyBound(nodeID)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"status": "issued",
+		"key":    key,
+		"info":   info,
+	})
+}
+
+// GET /api/network/unlock-status — get unlock status for this node
+func handleNetworkUnlockStatus(w http.ResponseWriter, r *http.Request) {
+	if !netMgr.IsSharedMode() {
+		writeJSON(w, 200, map[string]any{"unlocked": false, "message": "shared network not active"})
+		return
+	}
+
+	status := netMgr.GetUnlockStatus()
 	writeJSON(w, 200, status)
 }

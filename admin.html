@@ -886,6 +886,82 @@ select.form-input{appearance:none;cursor:pointer}
         <div id="netKeysList" style="font-size:12px;color:var(--text-muted)">暂无已签发密钥</div>
       </div>
 
+      <!-- 公共试用池 (Phase 2 Economic Model) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🎁 公共试用池</div>
+        <div class="section-note" style="margin-bottom:12px">新节点加入时自动创建试用密钥，提供试用额度。试用消耗算 2x 贡献积分（初期激励）。</div>
+        <div class="status-grid" style="margin-bottom:12px">
+          <div class="status-item">
+            <div>
+              <div class="status-label">试用密钥</div>
+              <div class="status-value" id="netTrialKeyCount">0</div>
+            </div>
+          </div>
+          <div class="status-item">
+            <div>
+              <div class="status-label">试用额度</div>
+              <div class="status-value" id="netTrialQuota">0</div>
+            </div>
+          </div>
+          <div class="status-item">
+            <div>
+              <div class="status-label">已消耗</div>
+              <div class="status-value" id="netTrialUsed">0</div>
+            </div>
+          </div>
+        </div>
+        <div id="netTrialPoolList" style="font-size:12px;color:var(--text-muted)">暂无试用密钥</div>
+        <div style="margin-top:8px">
+          <button class="btn btn-secondary btn-sm" onclick="issueTrialKey()">🎁 签发试用密钥</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadTrialPool()">🔄 刷新</button>
+        </div>
+      </div>
+
+      <!-- 节点解锁状态 (Phase 2 Cold Start) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔓 节点解锁状态</div>
+        <div class="section-note" style="margin-bottom:12px">新节点需先为别人提供服务（积累贡献积分），才能解锁访问全网资源的权限。阈值 = 全网平均贡献 × 0.3 × 网络规模因子。</div>
+        <div class="status-grid" style="margin-bottom:12px">
+          <div class="status-item">
+            <div>
+              <div class="status-label">本节点状态</div>
+              <div class="status-value" id="netSelfUnlockStatus">-</div>
+            </div>
+          </div>
+          <div class="status-item">
+            <div>
+              <div class="status-label">解锁阈值</div>
+              <div class="status-value" id="netUnlockThreshold">-</div>
+            </div>
+          </div>
+          <div class="status-item">
+            <div>
+              <div class="status-label">网络规模因子</div>
+              <div class="status-value" id="netScaleFactor">-</div>
+            </div>
+          </div>
+        </div>
+        <div id="netUnlockList" style="font-size:12px;color:var(--text-muted)">暂无解锁数据</div>
+        <div style="margin-top:8px">
+          <button class="btn btn-secondary btn-sm" onclick="loadUnlockStatus()">🔄 刷新</button>
+        </div>
+      </div>
+
+      <!-- 开放密钥 (Phase 2 Open Keys) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌐 开放密钥</div>
+        <div class="section-note" style="margin-bottom:12px">
+          <strong>未绑定</strong>：固定 1000 tokens，用完失效（零门槛体验）。<br>
+          <strong>已绑定</strong>：额度按信誉和贡献动态计算，可访问全网（需节点已解锁）。
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="issueOpenKeyUnbound()">🔓 签发未绑定密钥</button>
+          <button class="btn btn-secondary btn-sm" onclick="issueOpenKeyBound()">🔗 签发已绑定密钥</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadOpenKeys()">🔄 刷新</button>
+        </div>
+        <div id="netOpenKeysList" style="font-size:12px;color:var(--text-muted)">暂无开放密钥</div>
+      </div>
+
       <!-- 节点心跳状态 (Phase 2) -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">💓 节点心跳状态</div>
@@ -2458,6 +2534,9 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
         loadSignedKeys();
         loadContributions();
         loadHeartbeatStatus();
+        loadTrialPool();
+        loadUnlockStatus();
+        loadOpenKeys();
       } else {
         modeLabel.textContent = '个人模式';
         modeLabel.className = 'badge badge-blue';
@@ -2792,6 +2871,179 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
       } catch(e) {
         console.warn('load heartbeat failed', e);
       }
+    }
+
+    // ========== Phase 2 Economic Model: Trial Pool, Unlock, Open Keys ==========
+
+    async function loadTrialPool() {
+      try {
+        const r = await authFetch('/api/network/trial');
+        const d = await r.json();
+        const keys = d.trial_keys || [];
+        setText('netTrialKeyCount', keys.length);
+        
+        let totalQuota = 0, totalUsed = 0;
+        keys.forEach(k => { totalQuota += (k.quota || 0); totalUsed += (k.used || 0); });
+        setText('netTrialQuota', totalQuota.toLocaleString());
+        setText('netTrialUsed', totalUsed.toLocaleString());
+        
+        const el = document.getElementById('netTrialPoolList');
+        if (!el) return;
+        if (keys.length === 0) {
+          el.innerHTML = '<div style="color:var(--text-muted)">No trial keys</div>';
+          return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:6px">';
+        keys.forEach(k => {
+          const active = k.active ? '<span style="color:#22c55e;font-weight:600">Active</span>' : '<span style="color:#ef4444">Expired</span>';
+          const pct = k.quota > 0 ? Math.round((k.used / k.quota) * 100) : 0;
+          html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px">';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+          html += '<div>';
+          html += '<div style="font-weight:500;font-size:12px">Node: ' + (k.node_id || '-') + ' ' + active + '</div>';
+          html += '<div style="color:var(--text-muted);font-size:11px">Quota: ' + (k.used||0) + '/' + (k.quota||0) + ' (' + pct + '%) | Issued: ' + (k.issued_at || '-') + '</div>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+      } catch(e) { console.warn('load trial pool failed', e); }
+    }
+
+    async function issueTrialKey() {
+      try {
+        const r = await authFetch('/api/network/trial/issue', {
+          method: 'POST',
+          body: JSON.stringify({})
+        });
+        const d = await r.json();
+        if (!r.ok) { toast('Issue failed: ' + (d.error || 'unknown'), 'error'); return; }
+        const key = d.key || '';
+        toast('Trial key issued', 'success');
+        if (key) prompt('Trial key issued, please copy and save:', key);
+        loadTrialPool();
+      } catch(e) { toast('Issue failed: ' + e.message, 'error'); }
+    }
+
+    async function loadUnlockStatus() {
+      try {
+        const r = await authFetch('/api/network/unlock-status');
+        const d = await r.json();
+        
+        const selfState = d.self || {};
+        const selfStatus = selfState.unlocked 
+          ? '<span style="color:#22c55e;font-weight:600">Unlocked</span>' 
+          : '<span style="color:#f59e0b;font-weight:600">Locked (' + Math.round((selfState.progress || 0) * 100) + '%)</span>';
+        setText('netSelfUnlockStatus', '');
+        document.getElementById('netSelfUnlockStatus').innerHTML = selfStatus;
+        
+        setText('netUnlockThreshold', (d.threshold || 0).toLocaleString());
+        setText('netScaleFactor', (d.scale_factor || 1.0).toString());
+        
+        const allStates = d.all_states || {};
+        const el = document.getElementById('netUnlockList');
+        if (!el) return;
+        const entries = Object.values(allStates);
+        if (entries.length === 0) {
+          el.innerHTML = '<div style="color:var(--text-muted)">No unlock data</div>';
+          return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:6px">';
+        entries.forEach(s => {
+          const status = s.unlocked 
+            ? '<span style="color:#22c55e;font-weight:600">Unlocked</span>'
+            : '<span style="color:#f59e0b">Locked ' + Math.round((s.progress || 0) * 100) + '%</span>';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-secondary);border-radius:6px">';
+          html += '<div>';
+          html += '<div style="font-weight:500;font-size:12px">' + (s.node_id || '-') + '</div>';
+          html += '<div style="color:var(--text-muted);font-size:11px">Contrib: ' + (s.contrib_points || 0) + ' / Threshold: ' + (s.threshold_required || d.threshold || 0) + '</div>';
+          html += '</div>';
+          html += status;
+          html += '</div>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+      } catch(e) { console.warn('load unlock status failed', e); }
+    }
+
+    async function loadOpenKeys() {
+      try {
+        const r = await authFetch('/api/network/open-keys');
+        const d = await r.json();
+        const unbound = d.unbound || [];
+        const bound = d.bound || {};
+        const boundEntries = Object.entries(bound);
+        
+        const el = document.getElementById('netOpenKeysList');
+        if (!el) return;
+        
+        if (unbound.length === 0 && boundEntries.length === 0) {
+          el.innerHTML = '<div style="color:var(--text-muted)">No open keys</div>';
+          return;
+        }
+        
+        let html = '';
+        
+        if (unbound.length > 0) {
+          html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)">Unbound Keys (Zero-barrier)</div>';
+          html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">';
+          unbound.forEach(k => {
+            const active = k.active ? '<span style="color:#22c55e">Active</span>' : '<span style="color:#ef4444">Depleted</span>';
+            html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
+            html += '<div>';
+            html += '<div style="font-weight:500;font-size:12px">Unbound ' + active + '</div>';
+            html += '<div style="color:var(--text-muted);font-size:11px">Quota: ' + (k.used||0) + '/' + (k.quota||0) + ' | Issued: ' + (k.issued_at || '-') + '</div>';
+            html += '</div></div>';
+          });
+          html += '</div>';
+        }
+        
+        if (boundEntries.length > 0) {
+          html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)">Bound Keys (Network-wide)</div>';
+          html += '<div style="display:flex;flex-direction:column;gap:6px">';
+          boundEntries.forEach(([nodeId, k]) => {
+            const active = k.active ? '<span style="color:#22c55e">Active</span>' : '<span style="color:#ef4444">Inactive</span>';
+            html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
+            html += '<div>';
+            html += '<div style="font-weight:500;font-size:12px">Bound: ' + nodeId + ' ' + active + '</div>';
+            html += '<div style="color:var(--text-muted);font-size:11px">Quota: ' + (k.used||0) + '/' + (k.quota||0) + ' | Issued: ' + (k.issued_at || '-') + '</div>';
+            html += '</div></div>';
+          });
+          html += '</div>';
+        }
+        
+        el.innerHTML = html;
+      } catch(e) { console.warn('load open keys failed', e); }
+    }
+
+    async function issueOpenKeyUnbound() {
+      try {
+        const r = await authFetch('/api/network/open-keys/unbound', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) { toast('Issue failed: ' + (d.error || 'unknown'), 'error'); return; }
+        const key = d.key || '';
+        toast('Unbound open key issued (1000 tokens)', 'success');
+        if (key) prompt('Key issued, please copy and save:', key);
+        loadOpenKeys();
+      } catch(e) { toast('Issue failed: ' + e.message, 'error'); }
+    }
+
+    async function issueOpenKeyBound() {
+      const nodeId = prompt('Enter NodeID to bind:');
+      if (!nodeId) return;
+      try {
+        const r = await authFetch('/api/network/open-keys/bound', {
+          method: 'POST',
+          body: JSON.stringify({ node_id: nodeId })
+        });
+        const d = await r.json();
+        if (!r.ok) { toast('Issue failed: ' + (d.error || 'unknown'), 'error'); return; }
+        const key = d.key || '';
+        toast('Bound open key issued', 'success');
+        if (key) prompt('Key issued, please copy and save:', key);
+        loadOpenKeys();
+      } catch(e) { toast('Issue failed: ' + e.message, 'error'); }
     }
 
     function formatUptime(seconds) {

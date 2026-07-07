@@ -57,6 +57,10 @@ type NetworkConfig struct {
 	Addresses         []string        `json:"addresses"`
 	LastAddressUpdate string          `json:"last_address_update"`
 	RelayEnabled      bool            `json:"relay_enabled"`
+
+	// Phase 2 Economic Model
+	TrialPool         TrialPool                       `json:"trial_pool"`
+	NodeUnlockStates  map[string]*NodeUnlockState     `json:"node_unlock_states"`
 }
 
 // PeerInfo represents a connected peer in the shared network
@@ -70,6 +74,7 @@ type PeerInfo struct {
 	TrustScore float64  `json:"trust_score"`
 	JoinedAt   string   `json:"joined_at"`
 	Addresses  []string `json:"addresses,omitempty"`
+	Unlocked   bool     `json:"unlocked"`
 }
 
 // NetworkStats holds network statistics
@@ -265,6 +270,12 @@ func (nm *NetworkManager) load() {
 	if nm.config.Addresses == nil {
 		nm.config.Addresses = []string{}
 	}
+	if nm.config.NodeUnlockStates == nil {
+		nm.config.NodeUnlockStates = make(map[string]*NodeUnlockState)
+	}
+	if nm.config.TrialPool.TrialKeys == nil {
+		nm.config.TrialPool.TrialKeys = make([]*TrialKeyInfo, 0)
+	}
 }
 
 func (nm *NetworkManager) save() {
@@ -399,10 +410,34 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 	nm.config.Mode = NetworkModeShared
 	nm.config.Stats.JoinedAt = time.Now().Format(time.RFC3339)
 	nm.startTime = time.Now()
+
+	// Initialize unlock state for self
+	if nm.config.NodeUnlockStates == nil {
+		nm.config.NodeUnlockStates = make(map[string]*NodeUnlockState)
+	}
+	nm.config.NodeUnlockStates[nm.config.NodeID] = &NodeUnlockState{
+		NodeID:   nm.config.NodeID,
+		Unlocked: true, // self is always unlocked
+		ContribPoints: nm.config.ContribPoints,
+		Progress: 1.0,
+	}
+
 	nm.doSave()
 
 	go nm.registerSelf()
 	nm.startRefreshLoop()
+
+	// Auto-create trial pool for new nodes (Phase 2)
+	go func() {
+		time.Sleep(2 * time.Second) // wait for registration
+		if keyStore != nil && len(nm.config.TrialPool.TrialKeys) == 0 {
+			if err := nm.CreateTrialPoolForNode(nm.config.NodeID, DefaultTrialQuota); err != nil {
+				slog.Warn("failed to create trial pool", "error", err)
+			} else {
+				slog.Info("trial pool created for node", "node_id", nm.config.NodeID)
+			}
+		}
+	}()
 
 	slog.Info("shared network enabled", "node_id", nm.config.NodeID, "name", nm.config.NodeName)
 	return nil
@@ -481,6 +516,10 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		"relay_enabled":      nm.config.RelayEnabled,
 		"relay_consumer_url": relayURL,
 		"route_table_size":   routeTable.Count(),
+
+		// Phase 2 Economic Model
+		"trial_pool_count":  len(nm.config.TrialPool.TrialKeys),
+		"unlock_states":     len(nm.config.NodeUnlockStates),
 	}
 }
 
@@ -505,12 +544,24 @@ func (nm *NetworkManager) AddPeer(peer PeerInfo) error {
 	}
 	for i, p := range nm.config.Peers {
 		if p.NodeID == peer.NodeID {
+			// Preserve unlock state
+			peer.Unlocked = p.Unlocked
 			nm.config.Peers[i] = peer
 			nm.doSave()
 			if len(peer.Addresses) > 0 {
 				routeTable.Put(peer.NodeID, peer.Name, peer.Addresses)
 			}
 			return nil
+		}
+	}
+	// New peer — init unlock state
+	if nm.config.NodeUnlockStates == nil {
+		nm.config.NodeUnlockStates = make(map[string]*NodeUnlockState)
+	}
+	if _, exists := nm.config.NodeUnlockStates[peer.NodeID]; !exists {
+		nm.config.NodeUnlockStates[peer.NodeID] = &NodeUnlockState{
+			NodeID:   peer.NodeID,
+			Unlocked: false,
 		}
 	}
 	nm.config.Peers = append(nm.config.Peers, peer)
@@ -786,4 +837,255 @@ func handleNetworkResolve(w http.ResponseWriter, r *http.Request) {
 func handleNetworkRoutes(w http.ResponseWriter, r *http.Request) {
 	entries := routeTable.GetAll()
 	writeJSON(w, 200, map[string]any{"entries": entries, "count": len(entries)})
+}
+
+// ============================================================
+// Phase 2 Economic Model — Trial Pool & Node Unlock
+// ============================================================
+
+// TrialPool stores trial key information per node
+type TrialPool struct {
+	TrialKeys []*TrialKeyInfo `json:"trial_keys"`
+}
+
+// NodeUnlockState tracks a node's unlock progress
+type NodeUnlockState struct {
+	NodeID            string  `json:"node_id"`
+	Unlocked          bool    `json:"unlocked"`
+	ContribPoints     int64   `json:"contrib_points"`
+	ThresholdRequired int64   `json:"threshold_required"`
+	Progress          float64 `json:"progress"` // 0.0 to 1.0
+	UnlockedAt        string  `json:"unlocked_at,omitempty"`
+}
+
+// AddTrialKey adds a trial key to the pool
+func (nm *NetworkManager) AddTrialKey(info *TrialKeyInfo) {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	if nm.config.TrialPool.TrialKeys == nil {
+		nm.config.TrialPool.TrialKeys = make([]*TrialKeyInfo, 0)
+	}
+	nm.config.TrialPool.TrialKeys = append(nm.config.TrialPool.TrialKeys, info)
+	nm.doSave()
+}
+
+// GetTrialKeys returns all trial keys
+func (nm *NetworkManager) GetTrialKeys() []*TrialKeyInfo {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+	if nm.config.TrialPool.TrialKeys == nil {
+		return make([]*TrialKeyInfo, 0)
+	}
+	return nm.config.TrialPool.TrialKeys
+}
+
+// CreateTrialPoolForNode creates a trial pool when a node joins
+func (nm *NetworkManager) CreateTrialPoolForNode(nodeID string, quota int64) error {
+	if quota <= 0 {
+		quota = DefaultTrialQuota
+	}
+	if keyStore == nil {
+		return fmt.Errorf("key store not initialized")
+	}
+	_, _, err := keyStore.IssueTrialKey(nodeID, quota)
+	return err
+}
+
+// ============================================================
+// Dynamic Threshold Unlock (Cold Start)
+// ============================================================
+
+// CalculateUnlockThreshold calculates the dynamic unlock threshold.
+// threshold = networkAverageContribution * 0.3 * networkScaleFactor
+func (nm *NetworkManager) CalculateUnlockThreshold() int64 {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+
+	// Calculate total and average contribution
+	totalContrib := nm.config.ContribPoints
+	nodeCount := len(nm.config.Peers) + 1 // +1 for self
+
+	// Add approximate peer contributions
+	for _, peer := range nm.config.Peers {
+		totalContrib += int64(peer.TrustScore * 1000) // approximate
+	}
+
+	avgContrib := int64(0)
+	if nodeCount > 0 {
+		avgContrib = totalContrib / int64(nodeCount)
+	}
+
+	// Network scale factor
+	scaleFactor := 1.0
+	if nodeCount > 1000 {
+		scaleFactor = 0.5
+	} else if nodeCount > 100 {
+		scaleFactor = 0.8
+	}
+
+	threshold := int64(float64(avgContrib) * 0.3 * scaleFactor)
+	if threshold < 10 {
+		threshold = 10 // minimum threshold
+	}
+	return threshold
+}
+
+// CheckAndUnlockNode checks if a node has enough contributions to unlock
+func (nm *NetworkManager) CheckAndUnlockNode(nodeID string) bool {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+
+	state, exists := nm.config.NodeUnlockStates[nodeID]
+	if !exists {
+		return false
+	}
+
+	if state.Unlocked {
+		return true
+	}
+
+	threshold := nm.calculateUnlockThresholdLocked()
+	if state.ContribPoints >= threshold {
+		state.Unlocked = true
+		state.Progress = 1.0
+		state.ThresholdRequired = threshold
+		state.UnlockedAt = time.Now().Format(time.RFC3339)
+		nm.doSave()
+		slog.Info("node unlocked", "node_id", nodeID, "contrib", state.ContribPoints, "threshold", threshold)
+		return true
+	}
+
+	state.ThresholdRequired = threshold
+	if threshold > 0 {
+		state.Progress = float64(state.ContribPoints) / float64(threshold)
+	}
+	nm.doSave()
+	return false
+}
+
+// calculateUnlockThresholdLocked calculates threshold while lock is held
+func (nm *NetworkManager) calculateUnlockThresholdLocked() int64 {
+	totalContrib := int64(0)
+	for _, state := range nm.config.NodeUnlockStates {
+		totalContrib += state.ContribPoints
+	}
+	nodeCount := len(nm.config.NodeUnlockStates)
+	if nodeCount == 0 {
+		nodeCount = 1
+	}
+
+	avgContrib := totalContrib / int64(nodeCount)
+
+	scaleFactor := 1.0
+	if nodeCount > 1000 {
+		scaleFactor = 0.5
+	} else if nodeCount > 100 {
+		scaleFactor = 0.8
+	}
+
+	threshold := int64(float64(avgContrib) * 0.3 * scaleFactor)
+	if threshold < 10 {
+		threshold = 10
+	}
+	return threshold
+}
+
+// RecordContributionWithUnlock records contribution and checks unlock
+func (nm *NetworkManager) RecordContributionWithUnlock(nodeID string, points int64) {
+	nm.mu.Lock()
+	state, exists := nm.config.NodeUnlockStates[nodeID]
+	if !exists {
+		state = &NodeUnlockState{
+			NodeID:        nodeID,
+			Unlocked:      false,
+			ContribPoints: 0,
+		}
+		nm.config.NodeUnlockStates[nodeID] = state
+	}
+	state.ContribPoints += points
+	nm.mu.Unlock()
+
+	nm.CheckAndUnlockNode(nodeID)
+}
+
+// IsNodeUnlocked checks if a node is unlocked
+func (nm *NetworkManager) IsNodeUnlocked(nodeID string) bool {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+
+	// Self is always unlocked if in shared mode
+	if nodeID == nm.config.NodeID {
+		return true
+	}
+
+	state, exists := nm.config.NodeUnlockStates[nodeID]
+	if !exists {
+		return false
+	}
+	return state.Unlocked
+}
+
+// GetUnlockStatus returns unlock status for this node and all known nodes
+func (nm *NetworkManager) GetUnlockStatus() map[string]any {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+
+	threshold := nm.calculateUnlockThresholdLocked()
+
+	states := make(map[string]*NodeUnlockState)
+	for k, v := range nm.config.NodeUnlockStates {
+		cp := *v
+		if !cp.Unlocked && threshold > 0 {
+			cp.Progress = float64(cp.ContribPoints) / float64(threshold)
+		}
+		cp.ThresholdRequired = threshold
+		states[k] = &cp
+	}
+
+	selfID := nm.config.NodeID
+	selfState, exists := states[selfID]
+	if !exists {
+		selfState = &NodeUnlockState{
+			NodeID:            selfID,
+			Unlocked:          true, // self always unlocked
+			ContribPoints:     nm.config.ContribPoints,
+			ThresholdRequired: threshold,
+			Progress:          1.0,
+		}
+	}
+
+	nodeCount := len(nm.config.NodeUnlockStates)
+	if nodeCount == 0 {
+		nodeCount = 1
+	}
+	scaleFactor := 1.0
+	if nodeCount > 1000 {
+		scaleFactor = 0.5
+	} else if nodeCount > 100 {
+		scaleFactor = 0.8
+	}
+
+	return map[string]any{
+		"self":            selfState,
+		"all_states":      states,
+		"threshold":       threshold,
+		"node_count":      nodeCount,
+		"scale_factor":    scaleFactor,
+	}
+}
+
+// InitNodeUnlockState initializes unlock state for a new node
+func (nm *NetworkManager) InitNodeUnlockState(nodeID string) {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	if nm.config.NodeUnlockStates == nil {
+		nm.config.NodeUnlockStates = make(map[string]*NodeUnlockState)
+	}
+	if _, exists := nm.config.NodeUnlockStates[nodeID]; !exists {
+		nm.config.NodeUnlockStates[nodeID] = &NodeUnlockState{
+			NodeID:   nodeID,
+			Unlocked: false,
+		}
+		nm.doSave()
+	}
 }
