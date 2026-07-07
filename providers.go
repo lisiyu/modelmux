@@ -1,6 +1,6 @@
 package main
 
-// Preset provider definitions (22 platforms).
+// Preset provider definitions (24 platforms).
 // These serve as defaults when no user config exists.
 
 var presetProviders = []Provider{
@@ -43,18 +43,60 @@ var presetProviders = []Provider{
 		},
 	},
 	{
-		ID: "hunyuan", Name: "腾讯混元 (TokenHub)", Type: "openai_compatible",
-		BaseURL: "https://api.hunyuan.cloud.tencent.com/v1",
+		ID: "tokenhub-coding", Name: "腾讯 TokenHub Coding Plan", Type: "openai_compatible",
+		BaseURL: "https://api.lkeap.cloud.tencent.com/coding/v3",
 		Priority: 3,
-		Description: "腾讯云 TokenHub 大模型平台",
+		Description: "腾讯 TokenHub 编程套餐（按请求次数，5h/周/月限额），API Key 格式 sk-sp-xxxx",
 		Icon: "hunyuan",
-		APIKeyURL: "https://console.cloud.tencent.com/tokenhub/apikey",
+		APIKeyURL: "https://console.cloud.tencent.com/tokenhub/codingplan",
 		Models: []ModelDef{
-			{"hunyuan-turbos-latest", "混元 TurboS Latest", true},
-			{"hy3-preview", "混元 Hy3 Preview", true},
-			{"deepseek-v4-pro", "DeepSeek V4 Pro", true},
+			{"tc-code-latest", "Auto 智能路由", true},
+			{"glm-5", "GLM-5", true},
+			{"minimax-m2.5", "MiniMax M2.5", true},
+			{"kimi-k2.5", "Kimi K2.5", true},
+		},
+	},
+	{
+		ID: "tokenhub-plan", Name: "腾讯 TokenHub Token Plan", Type: "openai_compatible",
+		BaseURL: "https://api.lkeap.cloud.tencent.com/plan/v3",
+		Priority: 3,
+		Description: "腾讯 TokenPlan 个人版（按 Token 计费，订阅制），API Key 格式 sk-tp-xxxx",
+		Icon: "hunyuan",
+		APIKeyURL: "https://console.cloud.tencent.com/tokenhub/tokenplan",
+		Models: []ModelDef{
+			{"tc-code-latest", "Auto 智能路由", true},
+			{"glm-5", "GLM-5", true},
+			{"glm-5.1", "GLM-5.1", true},
+			{"minimax-m2.5", "MiniMax M2.5", true},
+			{"minimax-m2.7", "MiniMax M2.7", true},
+			{"kimi-k2.5", "Kimi K2.5", true},
+			{"deepseek-v4-flash-202605", "DeepSeek V4 Flash 原厂直供", true},
+			{"deepseek-v4-pro-202606", "DeepSeek V4 Pro 原厂直供", true},
+			{"hy3-preview", "Hy3 Preview (混元)", true},
+		},
+	},
+	{
+		ID: "tokenhub-enterprise", Name: "腾讯 TokenHub 企业版", Type: "openai_compatible",
+		BaseURL: "https://api.lkeap.cloud.tencent.com/plan/v3",
+		Priority: 3,
+		Description: "腾讯 TokenPlan 企业版（积分制，多 Key 配额管理，团队共享）",
+		Icon: "hunyuan",
+		APIKeyURL: "https://console.cloud.tencent.com/tokenhub/tokenplan-e",
+		Models: []ModelDef{
+			{"auto", "Auto 智能路由", true},
+			{"glm-5", "GLM-5", true},
+			{"glm-5.1", "GLM-5.1", true},
+			{"glm-5.2", "GLM-5.2", true},
+			{"glm-5-turbo", "GLM-5 Turbo", true},
+			{"minimax-m2.5", "MiniMax M2.5", true},
+			{"minimax-m2.7", "MiniMax M2.7", true},
+			{"minimax-m3", "MiniMax M3", true},
+			{"kimi-k2.5", "Kimi K2.5", true},
+			{"kimi-k2.6", "Kimi K2.6", true},
 			{"deepseek-v4-flash", "DeepSeek V4 Flash", true},
-			{"hunyuan-lite", "混元 Lite (免费)", true},
+			{"deepseek-v4-pro", "DeepSeek V4 Pro", true},
+			{"deepseek-v4-flash-202605", "DeepSeek V4 Flash 原厂直供", true},
+			{"deepseek-v4-pro-202606", "DeepSeek V4 Pro 原厂直供", true},
 		},
 	},
 	{

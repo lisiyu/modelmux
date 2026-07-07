@@ -1,6 +1,6 @@
 # ModelMux
 
-**轻量级多平台 AI 模型统一代理管理系统** — 将 22+ AI 平台封装为 OpenAI 兼容 API，智能路由，一键部署。
+**轻量级多平台 AI 模型统一代理管理系统** — 将 24+ AI 平台封装为 OpenAI 兼容 API，智能路由，一键部署。
 
 > Go 重写版，单二进制，零依赖，极致性能。
 
@@ -14,7 +14,7 @@
 ### 🔌 统一 API 网关
 
 - **OpenAI 兼容接口** — 统一 `/v1/chat/completions`，支持流式 (SSE) 与非流式，零拷贝转发
-- **22 个预置平台** — Coze、Sider.ai、OpenAI、DeepSeek、Gemini、通义千问、智谱、月之暗面、零一万物、MiniMax、硅基流动、Groq、xAI、Together、Mistral、豆包、讯飞星火、腾讯混元、OpenRouter、Poe、Ollama 等
+- **24 个预置平台** — Coze、Sider.ai、OpenAI、DeepSeek、Gemini、通义千问、智谱、月之暗面、零一万物、MiniMax、硅基流动、Groq、xAI、Together、Mistral、豆包、讯飞星火、腾讯 TokenHub（Coding Plan / Token Plan / 企业版）、OpenRouter、Poe、Ollama 等
 - **`provider/model` 语法** — 可通过 `deepseek/deepseek-chat` 格式指定平台，也支持 OpenRouter 风格路由
 
 ### 🧠 4 维智能路由
@@ -435,7 +435,7 @@ modelmux/
 ├── types.go          # 数据模型（OpenAI 兼容格式）
 ├── config.go         # 配置管理（JSON + 环境变量 + 加密）
 ├── provider.go       # Provider CRUD + 智能路由引擎
-├── providers.go      # 22 个预置平台定义
+├── providers.go      # 24 个预置平台定义
 ├── client.go         # 上游请求转发（OpenAI 兼容 / Sider / Coze）
 ├── sider.go          # Sider 网页版适配 + Token 状态监控
 ├── tracker.go        # 用量追踪 + EWMA + 批量写入 + 月度归档 + 预算告警
@@ -477,30 +477,32 @@ modelmux/
 
 ## 📦 预置平台一览
 
-| 平台 | 优先级 | 类型 | 特色 |
-|------|--------|------|------|
-| 扣子 (Coze) | 1 | 专有 API | 智能体平台，`coze-{bot_id}` 模型格式 |
-| Sider.ai | 2 | 网页 Token | 网页版多模型聚合 |
-| 腾讯混元 TokenHub | 3 | OpenAI 兼容 | 含 DeepSeek V4、Hy3 预览 |
-| Google Gemini | 4 | OpenAI 兼容 | 多模态、超长上下文 |
-| DeepSeek | 5 | OpenAI 兼容 | 高性价比国产大模型 |
-| 通义千问 | 5 | OpenAI 兼容 | 阿里云系列 |
-| 智谱 AI | 5 | OpenAI 兼容 | GLM 系列 |
-| Moonshot (Kimi) | 5 | OpenAI 兼容 | 长上下文 |
-| 零一万物 | 5 | OpenAI 兼容 | Yi 系列 |
-| MiniMax | 5 | OpenAI 兼容 | MiniMax 大模型 |
-| 硅基流动 | 5 | OpenAI 兼容 | 开源模型聚合 |
-| Groq | 5 | OpenAI 兼容 | 超快推理速度 |
-| xAI (Grok) | 5 | OpenAI 兼容 | Grok 系列 |
-| Together AI | 5 | OpenAI 兼容 | 开源模型推理 |
-| Mistral AI | 5 | OpenAI 兼容 | 欧洲领先大模型 |
-| 火山引擎 (豆包) | 5 | OpenAI 兼容 | 字节跳动豆包 |
-| 讯飞星火 | 5 | OpenAI 兼容 | 科大讯飞 |
-| OpenAI | 10 | OpenAI 兼容 | GPT-4o、o1、o3 系列 |
-| Poe | 15 | OpenAI 兼容 | Quora 多模型聚合 |
-| SID.ai | 15 | OpenAI 兼容 | 开发者平台 |
-| OpenRouter | 20 | OpenAI 兼容 | 全球模型聚合 |
-| Ollama | 50 | OpenAI 兼容 | 本地部署 |
+| # | 平台 | 优先级 | 类型 | 特色 |
+|---|------|--------|------|------|
+| 1 | 扣子 (Coze) | 1 | 专有 API | 智能体平台，`coze-{bot_id}` 模型格式 |
+| 2 | Sider.ai (网页版) | 2 | 网页 Token | 网页版多模型聚合，需登录获取 Token |
+| 3 | 腾讯 TokenHub Coding Plan | 3 | OpenAI 兼容 | 编程专属套餐，按请求次数限额，API Key 格式 `sk-sp-xxxx` |
+| 4 | 腾讯 TokenHub Token Plan | 3 | OpenAI 兼容 | 个人版按 Token 计费订阅制，API Key 格式 `sk-tp-xxxx`，含 GLM-5/5.1、MiniMax M2.5/M2.7、Kimi K2.5、DeepSeek V4、Hy3 |
+| 5 | 腾讯 TokenHub 企业版 | 3 | OpenAI 兼容 | 企业积分制，多 Key 配额管理，团队共享，含 GLM-5/5.1/5.2/Turbo、MiniMax M3、Kimi K2.6 等最新模型 |
+| 6 | Google Gemini | 4 | OpenAI 兼容 | 多模态、超长上下文，2.5 Pro/Flash 系列 |
+| 7 | DeepSeek | 5 | OpenAI 兼容 | 高性价比国产大模型，V3/R1 |
+| 8 | 通义千问 | 5 | OpenAI 兼容 | 阿里云 Qwen Turbo/Plus/Max/Long |
+| 9 | 智谱 AI | 5 | OpenAI 兼容 | GLM-4 系列，含视觉模型 |
+| 10 | Moonshot (Kimi) | 5 | OpenAI 兼容 | 长上下文 8K/32K/128K |
+| 11 | 零一万物 | 5 | OpenAI 兼容 | Yi 系列 |
+| 12 | MiniMax | 5 | OpenAI 兼容 | MiniMax 大模型 |
+| 13 | 硅基流动 | 5 | OpenAI 兼容 | 开源模型聚合平台 |
+| 14 | Groq | 5 | OpenAI 兼容 | 超快推理速度 |
+| 15 | xAI (Grok) | 5 | OpenAI 兼容 | Grok 2/3 系列 |
+| 16 | Together AI | 5 | OpenAI 兼容 | 开源模型推理平台 |
+| 17 | Mistral AI | 5 | OpenAI 兼容 | 欧洲领先大模型，含 Codestral |
+| 18 | 火山引擎 (豆包) | 5 | OpenAI 兼容 | 字节跳动豆包 |
+| 19 | 讯飞星火 | 5 | OpenAI 兼容 | 科大讯飞 |
+| 20 | OpenAI | 10 | OpenAI 兼容 | GPT-4o、o1、o3、o4-mini |
+| 21 | Poe | 15 | OpenAI 兼容 | Quora 多模型聚合 |
+| 22 | SID.ai | 15 | OpenAI 兼容 | 开发者平台 |
+| 23 | OpenRouter | 20 | OpenAI 兼容 | 全球模型聚合平台 |
+| 24 | Ollama (本地) | 50 | OpenAI 兼容 | 本地部署模型，零延迟 |
 
 ---
 

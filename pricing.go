@@ -14,12 +14,36 @@ var platformPricing = map[string]Price{
 	"sider:gpt-4o":            {0, 0},
 	"sider:claude-3-5-sonnet": {0, 0},
 	"sider:gemini-2.5-pro":    {0, 0},
-	// Tencent Hunyuan TokenHub
-	"hunyuan:hy3-preview":           {0.80, 3.20},
-	"hunyuan:hunyuan-turbos-latest": {0.30, 1.20},
-	"hunyuan:deepseek-v3":           {0.27, 1.10},
-	"hunyuan:deepseek-r1":           {0.55, 2.19},
-	"hunyuan:hunyuan-lite":          {0, 0},
+	// Tencent TokenHub - Coding Plan (subscription, per-request limits)
+	"tokenhub-coding:tc-code-latest": {0, 0},
+	"tokenhub-coding:glm-5":         {0, 0},
+	"tokenhub-coding:minimax-m2.5":  {0, 0},
+	"tokenhub-coding:kimi-k2.5":     {0, 0},
+	// Tencent TokenHub - Token Plan 个人版 (subscription, per-token)
+	"tokenhub-plan:tc-code-latest":            {0, 0},
+	"tokenhub-plan:glm-5":                     {0, 0},
+	"tokenhub-plan:glm-5.1":                   {0, 0},
+	"tokenhub-plan:minimax-m2.5":              {0, 0},
+	"tokenhub-plan:minimax-m2.7":              {0, 0},
+	"tokenhub-plan:kimi-k2.5":                 {0, 0},
+	"tokenhub-plan:deepseek-v4-flash-202605":  {0, 0},
+	"tokenhub-plan:deepseek-v4-pro-202606":    {0, 0},
+	"tokenhub-plan:hy3-preview":               {0, 0},
+	// Tencent TokenHub - Token Plan 企业版 (credit-based, prepaid)
+	"tokenhub-enterprise:auto":                      {0, 0},
+	"tokenhub-enterprise:glm-5":                     {0, 0},
+	"tokenhub-enterprise:glm-5.1":                   {0, 0},
+	"tokenhub-enterprise:glm-5.2":                   {0, 0},
+	"tokenhub-enterprise:glm-5-turbo":               {0, 0},
+	"tokenhub-enterprise:minimax-m2.5":              {0, 0},
+	"tokenhub-enterprise:minimax-m2.7":              {0, 0},
+	"tokenhub-enterprise:minimax-m3":                {0, 0},
+	"tokenhub-enterprise:kimi-k2.5":                 {0, 0},
+	"tokenhub-enterprise:kimi-k2.6":                 {0, 0},
+	"tokenhub-enterprise:deepseek-v4-flash":         {0, 0},
+	"tokenhub-enterprise:deepseek-v4-pro":           {0, 0},
+	"tokenhub-enterprise:deepseek-v4-flash-202605":  {0, 0},
+	"tokenhub-enterprise:deepseek-v4-pro-202606":    {0, 0},
 }
 
 var modelPricing = map[string]Price{
@@ -98,10 +122,24 @@ var modelPricing = map[string]Price{
 	"gemini-2.0-flash-lite": {0.075, 0.30},
 	"gemini-1.5-pro":        {1.25, 5.00},
 	"gemini-1.5-flash":      {0.075, 0.30},
-	// Hunyuan
-	"hy3-preview":           {0.80, 3.20},
-	"hunyuan-turbos-latest": {0.30, 1.20},
-	"hunyuan-lite":          {0, 0},
+	// Hunyuan / TokenHub models
+	"hy3-preview":               {0.80, 3.20},
+	"hunyuan-turbos-latest":     {0.30, 1.20},
+	"hunyuan-lite":              {0, 0},
+	"tc-code-latest":            {0, 0},
+	"glm-5":                     {0, 0},
+	"glm-5.1":                   {0, 0},
+	"glm-5.2":                   {0, 0},
+	"glm-5-turbo":               {0, 0},
+	"minimax-m2.5":              {0, 0},
+	"minimax-m2.7":              {0, 0},
+	"minimax-m3":                {0, 0},
+	"kimi-k2.5":                 {0, 0},
+	"kimi-k2.6":                 {0, 0},
+	"deepseek-v4-flash":         {0, 0},
+	"deepseek-v4-pro":           {0, 0},
+	"deepseek-v4-flash-202605":  {0, 0},
+	"deepseek-v4-pro-202606":    {0, 0},
 }
 
 // Default weights for auto routing mode (4 dimensions).
