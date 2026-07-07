@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"encoding/json"
+	"log/slog"
 	"fmt"
 	"net/smtp"
 	"strings"
@@ -152,9 +153,23 @@ func handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, cfg.Masked())
 }
 
+
+func mapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		slog.Error("handleSaveConfig: readJSON failed", "error", err)
+		writeError(w, 400, "invalid JSON body: "+err.Error())
+		return
+	}
+	slog.Info("handleSaveConfig: received body", "keys", fmt.Sprintf("%v", mapKeys(body)))
 	update := make(map[string]any)
 	if v, ok := body["coze_api_token"]; ok && v != "" {
 		update["coze_api_token"] = v

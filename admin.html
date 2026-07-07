@@ -220,17 +220,7 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 
-  <!-- Coze 配置 (旧版兼容) -->
-  <div class="card">
-    <div class="card-title"><span class="icon">🤖</span> Coze 配置 <span class="badge badge-yellow">旧版兼容</span></div>
-    <div class="section-note">推荐在上方「平台管理」中统一管理，此处为旧版兼容入口</div>
-    <div class="form-group"><label class="form-label">PAT Token</label><input class="form-input" id="cozeToken" placeholder="扣子个人访问令牌"></div>
-    <div class="form-group"><label class="form-label">默认 Bot ID</label><input class="form-input" id="cozeBotId" placeholder="默认智能体 Bot ID"></div>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="saveCozeConfig()">保存配置</button>
-      <button class="btn btn-secondary" onclick="testCozeConnection()">测试连接</button>
-    </div>
-  </div>
+
 
   <!-- 邮件服务 -->
   <div class="card">
@@ -780,7 +770,6 @@ function getIcon(id) {
   return icons[id] || '🔌';
 }
 
-// ===== Coze Config =====
 // ===== Proxy API URL =====
 function initProxyApiUrl() {
   const urlEl = document.getElementById('proxyApiUrl');
@@ -836,23 +825,6 @@ async function loadProxyApiKey() {
   } catch(e) {}
 }
 
-// ===== Coze Config =====
-async function loadCozeConfig() {
-  try { const r = await authFetch('/api/config'); const d = await r.json(); document.getElementById('cozeToken').value = ''; document.getElementById('cozeToken').placeholder = d.coze_api_token_masked || '未配置'; document.getElementById('cozeBotId').value = d.coze_bot_id || ''; } catch(e) {}
-}
-async function saveCozeConfig() {
-  const data = {};
-  const t = document.getElementById('cozeToken').value.trim(); if (t) data.coze_api_token = t;
-  const b = document.getElementById('cozeBotId').value.trim(); if (b) data.coze_bot_id = b;
-  if (!Object.keys(data).length) { toast('请填写配置', 'error'); return; }
-  await authFetch('/api/config', { method: 'POST', body: JSON.stringify(data) });
-  toast('Coze 配置已保存'); loadCozeConfig();
-}
-async function testCozeConnection() {
-  toast('测试中...', 'info');
-  const r = await authFetch('/api/test-connection', { method: 'POST' });
-  const d = await r.json();
-  toast(d.success ? `✅ ${d.message||'连接成功'}` : `❌ ${d.error}`, d.success?'success':'error');
 }
 
 // ===== SMTP =====
@@ -873,7 +845,7 @@ async function updateEmail() { const e = document.getElementById('adminEmail').v
 async function changePassword() { const o = document.getElementById('oldPass').value; const n = document.getElementById('newPass').value; if (!o||!n) return toast('请填写密码','error'); try { const r = await authFetch('/api/admin/change-password', {method:'POST', body:JSON.stringify({old_password:o,new_password:n})}); const d = await r.json(); toast(d.success?'✅ 密码已修改':'❌ '+d.detail, d.success?'success':'error'); document.getElementById('oldPass').value=''; document.getElementById('newPass').value=''; } catch(e) { toast(e.message,'error'); } }
 
 // ===== Start =====
-init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadCozeConfig(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); });
+init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); });
 
 // Auto-refresh status and usage every 30 seconds
 setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
