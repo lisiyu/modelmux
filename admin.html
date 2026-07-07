@@ -1037,6 +1037,47 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
       </div>
 
+      <!-- 区域分布 (Phase 4) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+          <span>🌏 区域分布 (Phase 4)</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadRegionData()">🔄 刷新</button>
+        </div>
+        <div id="netRegionSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px"></div>
+        <div id="netRegionConfig" style="margin-bottom:12px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">区域路由配置</div>
+          <div style="display:flex;gap:8px;align-items:center;font-size:12px">
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" id="regionPreferLocal" checked onchange="updateRegionConfig()"> 优先本区域
+            </label>
+            <label style="display:flex;align-items:center;gap:4px">
+              跨区域延迟容忍倍数:
+              <input type="number" id="regionCrossThreshold" value="2.0" min="1" max="10" step="0.5" style="width:60px;padding:4px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);font-size:12px" onchange="updateRegionConfig()">
+            </label>
+          </div>
+        </div>
+        <div id="netRegionDetail" style="font-size:12px;color:var(--text-muted)">加载中...</div>
+      </div>
+
+      <!-- 动态平衡引擎 (Phase 4) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+          <span>⚖️ 动态平衡引擎 (Phase 4)</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-secondary btn-sm" onclick="loadBalanceData()">🔄 刷新</button>
+            <button class="btn btn-primary btn-sm" onclick="recalculateBalance()">⚡ 手动计算</button>
+          </div>
+        </div>
+        <!-- Global balance status -->
+        <div id="netBalanceGlobal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:12px"></div>
+        <!-- Node balance list -->
+        <div style="font-size:13px;font-weight:500;margin-bottom:8px">节点平衡度</div>
+        <div id="netBalanceNodes" style="font-size:12px;color:var(--text-muted);max-height:300px;overflow-y:auto;margin-bottom:12px">暂无数据</div>
+        <!-- Active adjustments -->
+        <div style="font-size:13px;font-weight:500;margin-bottom:8px">当前调节方案</div>
+        <div id="netBalanceAdjustments" style="font-size:12px;color:var(--text-muted);max-height:200px;overflow-y:auto">暂无调节</div>
+      </div>
+
       <!-- 节点心跳状态 (Phase 2) -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">💓 节点心跳状态</div>
@@ -3623,6 +3664,113 @@ if (authToken) {
         clearInterval(_netPollTimer); _netPollTimer = null;
       }
     }, 30000);
+
+    // ============================================================
+    // Phase 4: Load Balancer UI
+    // ============================================================
+    async function loadLBData() {
+      try {
+        // Load status
+        const statusR = await authFetch('/api/network/loadbalancer/status');
+        const status = await statusR.json();
+        const statusEl = document.getElementById('netLBStatus');
+        if (statusEl) {
+          if (!status.enabled) {
+            statusEl.innerHTML = '<div style="color:var(--text-muted)">负载均衡器未启用</div>';
+            return;
+          }
+          let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px">';
+          html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:8px 12px"><div style="font-size:11px;color:var(--text-muted)">总节点数</div><div style="font-size:16px;font-weight:700">' + (status.total_nodes || 0) + '</div></div>';
+          html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:8px 12px"><div style="font-size:11px;color:var(--text-muted)">健康节点</div><div style="font-size:16px;font-weight:700;color:var(--success-color,#10b981)">' + (status.healthy_nodes || 0) + '</div></div>';
+          html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:8px 12px"><div style="font-size:11px;color:var(--text-muted)">路由历史</div><div style="font-size:16px;font-weight:700">' + (status.route_history || 0) + '</div></div>';
+          html += '</div>';
+          statusEl.innerHTML = html;
+        }
+
+        // Load node scores
+        const nodesR = await authFetch('/api/network/loadbalancer/nodes');
+        const nodesD = await nodesR.json();
+        const nodesEl = document.getElementById('netLBNodes');
+        if (nodesEl && nodesD.nodes && nodesD.nodes.length > 0) {
+          let html = '<div style="font-size:12px;font-weight:600;margin-bottom:6px">节点评分排名</div>';
+          html += '<div style="display:flex;flex-direction:column;gap:4px">';
+          nodesD.nodes.forEach((n, i) => {
+            const healthColor = n.healthy ? 'var(--success-color,#10b981)' : 'var(--danger-color,#ef4444)';
+            const healthText = n.healthy ? '🟢 健康' : '🔴 异常';
+            const barWidth = Math.min(n.score, 100);
+            html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+            html += '<div style="display:flex;align-items:center;gap:6px">';
+            html += '<span style="font-size:11px;color:var(--text-muted)">#' + (i+1) + '</span>';
+            html += '<span style="font-weight:500;font-size:11px;font-family:monospace">' + n.node_id.substring(0, 20) + '...</span>';
+            html += '</div>';
+            html += '<div style="display:flex;align-items:center;gap:8px">';
+            html += '<span style="font-size:10px">' + healthText + '</span>';
+            html += '<span style="font-weight:700;font-size:13px">' + n.score.toFixed(1) + '</span>';
+            html += '</div></div>';
+            html += '<div style="background:var(--border-color);border-radius:3px;height:4px;overflow:hidden">';
+            html += '<div style="background:' + healthColor + ';height:100%;width:' + barWidth + '%;border-radius:3px;transition:width 0.3s"></div>';
+            html += '</div>';
+            html += '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">延迟: ' + n.latency_ms + 'ms</div>';
+            html += '</div>';
+          });
+          html += '</div>';
+          nodesEl.innerHTML = html;
+        } else if (nodesEl) {
+          nodesEl.innerHTML = '<div style="color:var(--text-muted)">暂无节点评分数据</div>';
+        }
+
+        // Update config editor with current values
+        if (status.config) {
+          const c = status.config;
+          if (document.getElementById('lbLatencyW')) document.getElementById('lbLatencyW').value = c.latency_weight || 0.35;
+          if (document.getElementById('lbLoadW')) document.getElementById('lbLoadW').value = c.load_weight || 0.25;
+          if (document.getElementById('lbErrorW')) document.getElementById('lbErrorW').value = c.error_rate_weight || 0.20;
+          if (document.getElementById('lbFairW')) document.getElementById('lbFairW').value = c.fairness_weight || 0.10;
+          if (document.getElementById('lbRepW')) document.getElementById('lbRepW').value = c.reputation_weight || 0.10;
+        }
+      } catch(e) { console.warn('load LB data failed', e); }
+    }
+
+    function toggleLBConfigEditor() {
+      const el = document.getElementById('netLBConfigEditor');
+      if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function saveLBConfig() {
+      const cfg = {
+        latency_weight: parseFloat(document.getElementById('lbLatencyW').value) || 0.35,
+        load_weight: parseFloat(document.getElementById('lbLoadW').value) || 0.25,
+        error_rate_weight: parseFloat(document.getElementById('lbErrorW').value) || 0.20,
+        fairness_weight: parseFloat(document.getElementById('lbFairW').value) || 0.10,
+        reputation_weight: parseFloat(document.getElementById('lbRepW').value) || 0.10,
+        health_check_interval: 30000000000,
+        metrics_window: 20,
+        max_latency: 5000000000
+      };
+      try {
+        const r = await authFetch('/api/network/loadbalancer/config', {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(cfg)
+        });
+        const d = await r.json();
+        if (!r.ok) { toast('保存失败: ' + (d.error || 'unknown'), 'error'); return; }
+        toast('负载均衡配置已更新', 'success');
+        document.getElementById('netLBConfigEditor').style.display = 'none';
+        loadLBData();
+      } catch(e) { toast('保存失败: ' + e.message, 'error'); }
+    }
+
+    // Hook LB data loading into network status refresh
+    const _origLoadNetworkStatus2 = loadNetworkStatus;
+    loadNetworkStatus = async function() {
+      await _origLoadNetworkStatus2();
+      const netActive = document.getElementById('networkActive');
+      if (netActive && netActive.style.display !== 'none') {
+        loadLBData();
+      }
+    };
 
 
 </script>
