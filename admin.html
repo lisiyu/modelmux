@@ -544,7 +544,7 @@ function renderProviders() {
   list.innerHTML = allProviders.map(p => {
     const enabled = p.enabled;
     const models = p.models || [];
-    const keyStatus = p.api_key_masked ? `<span class="badge badge-green">Key: ${p.api_key_masked}</span>` : '<span class="badge badge-red">未配置 Key</span>';
+    const keyStatus = p.api_key ? `<span class="badge badge-green">Key: ${p.api_key}</span>` : '<span class="badge badge-red">未配置 Key</span>';
     return `<div class="provider-item" id="p-${p.id}">
       <div class="provider-header" onclick="toggleModels('${p.id}')">
         <div class="provider-info">
@@ -683,7 +683,7 @@ function editProvider(pid) {
   document.getElementById('pName').value = p.name || '';
   document.getElementById('pUrl').value = p.base_url || '';
   document.getElementById('pKey').value = '';
-  document.getElementById('pKey').placeholder = p.api_key_masked ? `当前: ${p.api_key_masked}（留空不修改）` : '输入 API Key';
+  document.getElementById('pKey').placeholder = p.api_key ? `当前: ${p.api_key}（留空不修改）` : '输入 API Key';
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.priority || 5;
   document.getElementById('pEnabled').checked = p.enabled !== false;
