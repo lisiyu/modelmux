@@ -95,7 +95,10 @@ func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct{ Email string `json:"email"` }
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 
 	// Verify email matches admin email
 	if body.Email == "" || body.Email != auth.GetEmail() {
@@ -162,7 +165,10 @@ func handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		Token       string `json:"token"`
 		NewPassword string `json:"new_password"`
 	}
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	if err := auth.ResetPassword(body.Token, body.NewPassword); err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -172,7 +178,10 @@ func handleResetPassword(w http.ResponseWriter, r *http.Request) {
 
 func handleVerifyResetToken(w http.ResponseWriter, r *http.Request) {
 	var body struct{ Token string `json:"token"` }
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	if !auth.VerifyResetToken(body.Token) {
 		writeError(w, 400, "invalid or expired reset token")
 		return
@@ -193,7 +202,10 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		OldPassword string `json:"old_password"`
 		NewPassword string `json:"new_password"`
 	}
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	if err := auth.ChangePassword(body.OldPassword, body.NewPassword); err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -203,7 +215,10 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 func handleUpdateEmail(w http.ResponseWriter, r *http.Request) {
 	var body struct{ Email string `json:"email"` }
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	auth.UpdateEmail(body.Email)
 	writeJSON(w, 200, map[string]any{"success": true, "message": "email updated"})
 }
@@ -356,7 +371,10 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var updates map[string]any
-	readJSON(r, &updates)
+	if err := readJSON(r, &updates); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 
 	// Remove masked API key from updates to prevent overwriting real key
 	if apiKey, ok := updates["api_key"]; ok {
@@ -426,6 +444,27 @@ func handleGetProviderModels(w http.ResponseWriter, r *http.Request) {
 	}
 	models := fetchRemoteModels(p)
 	writeJSON(w, 200, map[string]any{"models": models, "count": len(models)})
+}
+
+// ============================================================
+// Provider model sync handler
+// ============================================================
+
+func handleSyncModels(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, ok := pm.GetRaw(id)
+	if !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+	_ = p
+
+	count, err := pm.SyncModels(id)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "models_synced": count})
 }
 
 // ============================================================
@@ -526,7 +565,10 @@ func handleGetRoutingMode(w http.ResponseWriter, r *http.Request) {
 
 func handleSetRoutingMode(w http.ResponseWriter, r *http.Request) {
 	var body struct{ Mode string `json:"mode"` }
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	valid := map[string]bool{"priority": true, "cheapest": true, "fastest": true, "auto": true}
 	if !valid[body.Mode] {
 		writeError(w, 400, "invalid routing mode")
@@ -544,7 +586,10 @@ func handleGetRoutingWeights(w http.ResponseWriter, r *http.Request) {
 
 func handleSetRoutingWeights(w http.ResponseWriter, r *http.Request) {
 	var body map[string]float64
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	weights := map[string]float64{
 		"priority": clamp(body["priority"], 0, 1),
 		"cost":     clamp(body["cost"], 0, 1),
@@ -580,7 +625,10 @@ func handleGetSMTPConfig(w http.ResponseWriter, r *http.Request) {
 
 func handleSaveSMTPConfig(w http.ResponseWriter, r *http.Request) {
 	var s SMTPConfig
-	readJSON(r, &s)
+	if err := readJSON(r, &s); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	if s.Port == 0 {
 		s.Port = 587
 	}

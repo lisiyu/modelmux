@@ -13,13 +13,14 @@ import (
 	"time"
 )
 
-const AppVersion = "3.1.0"
+const AppVersion = "3.2.0"
 
 func main() {
 	// Initialize all components
 	os.MkdirAll("data", 0755)
 	initEncryptor("data/.key")
 	initConfig("data/config.json")
+	initLogger("data")
 	initProviderManager("data/providers.json")
 	initTracker("data/usage.json")
 	initSiderMonitor("data/sider_token_status.json")
@@ -37,6 +38,18 @@ func main() {
 	initMessages("data")
 	initNodeWeightManager("data")
 	initInviteManager("data")
+
+	// Initialize DHT routing table (Phase 3 hybrid discovery)
+	initDHT()
+
+	// Initialize event bus for real-time push
+	initEventBus()
+
+	// Initialize metrics collector
+	initMetrics()
+
+	// Initialize rate limiter
+	initRateLimiter()
 
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
@@ -65,8 +78,8 @@ func main() {
 	mux.HandleFunc("GET /health", handleHealth)
 
 	// OpenAI-compatible endpoints (supports admin proxy key + consumer keys)
-	mux.HandleFunc("GET /v1/models", withProxyAuth(handleListModels))
-	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(handleChatCompletions))
+	mux.HandleFunc("GET /v1/models", withProxyAuth(rateLimitMiddleware(handleListModels)))
+	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(rateLimitMiddleware(handleChatCompletions)))
 
 	// Auth (public)
 	mux.HandleFunc("GET /api/setup/status", handleSetupStatus)
@@ -98,6 +111,7 @@ func main() {
 	mux.HandleFunc("POST /api/providers/{id}/test", withConsumerOrAdminAuth(handleTestProvider))
 	mux.HandleFunc("GET /api/providers/{id}/models", withConsumerOrAdminAuth(handleGetProviderModels))
 	mux.HandleFunc("POST /api/providers/{id}/sync-url", withConsumerOrAdminAuth(handleSyncProviderURL))
+	mux.HandleFunc("POST /api/providers/{id}/sync-models", withConsumerOrAdminAuth(handleSyncModels))
 	mux.HandleFunc("POST /api/providers/sync-all-urls", withConsumerOrAdminAuth(handleSyncAllURLs))
 
 	// Sider status
@@ -124,6 +138,12 @@ func main() {
 	// Request logs & health (protected)
 	mux.HandleFunc("GET /api/logs", withAuth(handleRequestLogs))
 	mux.HandleFunc("GET /api/health", withAuth(handleHealthStatus))
+
+	// Real-time events (SSE)
+	mux.HandleFunc("GET /events", handleSSE)
+
+	// Prometheus metrics
+	mux.HandleFunc("GET /metrics", handleMetrics)
 
 	// Multi-user / invite codes (protected)
 	mux.HandleFunc("GET /api/invite-codes", withAuth(handleListInviteCodes))
@@ -169,8 +189,8 @@ func main() {
 	mux.HandleFunc("GET /api/federation/invites", withAuth(handleListInvites))
 	mux.HandleFunc("POST /api/federation/invites/verify", handleVerifyInvite)
 
-	// CORS middleware
-	handler := corsMiddleware(mux)
+	// CORS + request logging middleware
+	handler := corsMiddleware(requestLogMiddleware(mux))
 
 	port := cfg.Get("service_port", "8000")
 	addr := ":" + port
@@ -186,20 +206,43 @@ func main() {
 	// Graceful shutdown
 	go func() {
 		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		slog.Info("shutting down...")
-		tracker.Stop()
-		healthChecker.stop()
-		if fed != nil {
-			fed.stop()
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+		for {
+			sig := <-sigCh
+			switch sig {
+			case syscall.SIGHUP:
+				// Hot reload configuration
+				slog.Info("SIGHUP received, reloading configuration...")
+				cfg.load()
+				// Reinitialize rate limiter with new config
+				initRateLimiter()
+				// Reload federation config if changed
+				if fed != nil {
+					fed.mu.Lock()
+					fed.enabled = cfg.Get("federation_enabled", "false") == "true"
+					fed.relayEnabled = cfg.Get("federation_relay_enabled", "false") == "true"
+					fed.mu.Unlock()
+				}
+				// Broadcast config update via SSE
+				BroadcastConfigUpdate("all")
+				slog.Info("configuration reloaded successfully")
+			case syscall.SIGINT, syscall.SIGTERM:
+				slog.Info("shutting down...")
+				tracker.Stop()
+				healthChecker.stop()
+				CloseAccessLog()
+				if fed != nil {
+					fed.stop()
+				}
+				if gossip != nil {
+					gossip.stop()
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				server.Shutdown(ctx)
+				return
+			}
 		}
-		if gossip != nil {
-			gossip.stop()
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		server.Shutdown(ctx)
 	}()
 
 	slog.Info("ModelMux started", "port", port, "providers", len(pm.Enabled()))
@@ -215,7 +258,16 @@ func main() {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		allowedOrigins := cfg.Get("cors_allowed_origins", "*")
+
+		if allowedOrigins == "*" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if origin != "" && isOriginAllowed(origin, allowedOrigins) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == "OPTIONS" {
@@ -224,6 +276,29 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isOriginAllowed checks if an origin matches the whitelist.
+// Supports exact match and wildcard subdomain (*.example.com).
+func isOriginAllowed(origin, whitelist string) bool {
+	origins := strings.Split(whitelist, ",")
+	for _, allowed := range origins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+		if allowed == origin {
+			return true
+		}
+		// Wildcard subdomain: *.example.com matches sub.example.com
+		if strings.HasPrefix(allowed, "*.") {
+			suffix := allowed[1:] // ".example.com"
+			if strings.HasSuffix(origin, suffix) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // withProxyAuth authenticates v1 proxy endpoints.
@@ -430,11 +505,23 @@ func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
 	// Genesis hash info
 	status["genesis"] = GenesisInfo()
 
+	// DHT routing table info (Phase 3 hybrid discovery)
+	status["dht"] = GetDHTStats()
+
 	writeJSON(w, 200, status)
 }
 
 // handleGetFederationConfig returns the current federation configuration.
 func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
+	approvalMode := cfg.Get("node_approval_mode", "auto")
+	if nwm != nil {
+		approvalMode = nwm.GetApprovalMode()
+	}
+	var tokenBudget int64
+	if nwm != nil {
+		tokenBudget = nwm.GetTokenBudget()
+	}
+
 	writeJSON(w, 200, map[string]any{
 		"federation_enabled":       cfg.Get("federation_enabled", "false"),
 		"federation_relay_enabled": cfg.Get("federation_relay_enabled", "false"),
@@ -449,6 +536,8 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"federation_doc_version":   AppVersion,                       // current doc version
 		"federation_doc_read_version": cfg.Get("federation_doc_read_version", ""), // last read version
 		"node_approval_mode":       cfg.Get("node_approval_mode", "auto"),
+		"approval_mode":            approvalMode,
+		"token_budget":             tokenBudget,
 	})
 }
 
@@ -472,6 +561,17 @@ func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	cfg.save()
+
+	// Apply federation config changes to running instance
+	if fed != nil {
+		fed.mu.Lock()
+		fed.enabled = cfg.Get("federation_enabled", "false") == "true"
+		fed.relayEnabled = cfg.Get("federation_relay_enabled", "false") == "true"
+		fed.mu.Unlock()
+	}
+
+	// Broadcast config update via SSE
+	BroadcastConfigUpdate("federation")
 
 	writeJSON(w, 200, map[string]string{"status": "saved"})
 }

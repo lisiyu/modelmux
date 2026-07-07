@@ -31,7 +31,7 @@ func initConfig(path string) {
 }
 
 // sensitiveKeys lists config keys that must be encrypted at rest.
-var sensitiveKeys = []string{"proxy_api_key"}
+var sensitiveKeys = []string{"proxy_api_key", "coze_api_token"}
 
 func (c *Config) load() {
 	c.mu.Lock()

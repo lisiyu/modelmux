@@ -354,7 +354,10 @@ func handleCreateInviteCode(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		MaxUses int `json:"max_uses"` // 0 = single use
 	}
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	if body.MaxUses < 0 {
 		body.MaxUses = 0
 	}
@@ -435,7 +438,10 @@ func handleToggleConsumer(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Enabled bool `json:"enabled"`
 	}
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
 	if !multiUser.ToggleConsumer(id, body.Enabled) {
 		writeError(w, 404, "consumer not found")
 		return
