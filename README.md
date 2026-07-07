@@ -182,17 +182,25 @@ ModelMux Agent 从一个轻量级 AI API 代理起步，正在演化为一个 **
 
 ### 一键安装（推荐）
 
+**Linux / macOS：**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash
 ```
 
-自定义端口和目录：
+自定义参数：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash -s -- --port 9090 --dir /opt/modelmux
 ```
 
-脚本自动完成：检测并安装 Docker → 克隆仓库 → 构建镜像 → 启动容器。后续更新同一行命令。
+**Windows (PowerShell 管理员)：**
+
+```powershell
+irm https://raw.githubusercontent.com/lisiyu/modelmux/main/install.ps1 | iex
+```
+
+安装脚本自动完成：检测平台 → 下载二进制 → SHA256 校验 → 安装 → 注册系统服务 → 自动启动。
 
 ### 编译运行
 
@@ -201,33 +209,22 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | b
 git clone https://github.com/lisiyu/modelmux.git
 cd modelmux
 
-# 编译
+# 编译当前平台
 make build
 
 # 运行（默认端口 8000）
 ./modelmux
 ```
 
-或一步完成：
+### Docker 部署
 
 ```bash
-make run
-```
+# Docker Compose（推荐）
+docker compose up -d
 
-### Docker 手动部署
-
-```bash
-# 构建镜像
+# 或手动
 docker build -t modelmux .
-
-# 启动容器
-docker run -d \
-  --name modelmux \
-  --restart unless-stopped \
-  -p 8000:8000 \
-  -v $(pwd)/data:/app/data \
-  -e TZ=Asia/Shanghai \
-  modelmux
+docker run -d --name modelmux -p 8000:8000 -v $(pwd)/data:/app/data modelmux
 ```
 
 ### 环境变量
@@ -391,6 +388,75 @@ curl ... -d '{"model": "deepseek/deepseek-chat", ...}'
 | `GET` | `/health` | 服务健康检查（公开） |
 
 ---
+
+## 🔨 构建与部署
+
+### 多平台交叉编译
+
+```bash
+# 编译所有平台（6 个目标）
+make build-all
+# 或
+./build-all.sh
+
+# 编译单个平台
+./build-all.sh linux-amd64
+./build-all.sh linux-arm64
+./build-all.sh linux-armv7    # 树莓派 3B / OpenWRT
+./build-all.sh darwin-arm64   # Apple Silicon
+./build-all.sh windows-amd64
+
+# 查看支持的平台
+./build-all.sh list
+```
+
+编译产物输出到 `dist/` 目录，包含 SHA256 校验文件。
+
+### 支持的平台
+
+| 平台 | 架构 | 输出文件 | 适用设备 |
+|------|------|---------|---------|
+| Linux | amd64 | `modelmux-linux-amd64` | x86_64 服务器 |
+| Linux | arm64 | `modelmux-linux-arm64` | ARM 服务器 |
+| Linux | armv7 | `modelmux-linux-armv7` | 树莓派 3B、OpenWRT |
+| macOS | amd64 | `modelmux-darwin-amd64` | Intel Mac |
+| macOS | arm64 | `modelmux-darwin-arm64` | Apple Silicon Mac |
+| Windows | amd64 | `modelmux-windows-amd64.exe` | x64 Windows |
+
+### Makefile 命令速查
+
+| 命令 | 说明 |
+|------|------|
+| `make build` | 编译当前平台 |
+| `make build-all` | 编译所有 6 个平台 |
+| `make build-linux` | 仅编译 Linux (3 个架构) |
+| `make build-darwin` | 仅编译 macOS (2 个架构) |
+| `make build-windows` | 仅编译 Windows |
+| `make clean` | 清理编译产物 |
+| `make test` | 运行测试 + 覆盖率 |
+| `make docker` | 构建 Docker 镜像 |
+| `make docker-compose` | Docker Compose 启动 |
+| `make release` | 完整发布流程 |
+
+### 编译优化
+
+所有编译均使用以下优化参数：
+
+```bash
+go build -ldflags="-s -w" -trimpath
+```
+
+- `-s -w`：去除调试信息和符号表，减小二进制体积
+- `-trimpath`：去除本地路径信息，提高可移植性和安全性
+
+### 安装脚本参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--port` | 服务端口 | `8000` |
+| `--dir` | 安装目录 | `/usr/local/bin` |
+| `--data` | 数据目录 | `/var/lib/modelmux` |
+| `--version` | 指定版本 | `latest` |
 
 ## ⚙️ 配置说明
 
