@@ -340,6 +340,8 @@ type NodeInfo struct {
 	Reputation     int                `json:"reputation"`
 	Version        string             `json:"version"`
 	InviteBy       string             `json:"invite_by,omitempty"`
+	TokenBudget    int64              `json:"token_budget"`    // monthly token budget declaration (0 = unlimited)
+	TokenUsed      int64              `json:"token_used"`      // tokens used this month
 }
 
 // SharedProvider is a provider advertised by a remote node (no API key!).

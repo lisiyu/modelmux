@@ -14,14 +14,15 @@ import (
 
 // NodeIdentity manages this node's identity in the federation.
 type NodeIdentity struct {
-	mu         sync.RWMutex
-	nodeID     string
-	privKey    ed25519.PrivateKey
-	pubKey     ed25519.PublicKey
-	githubUser string
-	githubID   int64
-	joinedAt   time.Time
-	keyPath    string // path to encrypted key file
+	mu          sync.RWMutex
+	nodeID      string
+	privKey     ed25519.PrivateKey
+	pubKey      ed25519.PublicKey
+	githubUser  string
+	githubID    int64
+	joinedAt    time.Time
+	keyPath     string // path to encrypted key file
+	tokenBudget int64  // monthly token budget declaration
 }
 
 var node *NodeIdentity
@@ -214,6 +215,7 @@ func (n *NodeIdentity) GetInfo() NodeInfo {
 		SeedNode:        cfg.Get("federation_seed", "false") == "true",
 		Reputation:      0,
 		Version:         AppVersion,
+		TokenBudget:     n.tokenBudget,
 	}
 }
 
@@ -224,6 +226,13 @@ func (n *NodeIdentity) SetGitHub(user string, id int64) {
 	n.githubID = id
 	n.mu.Unlock()
 	n.save()
+}
+
+// SetTokenBudget sets this node's declared monthly token budget.
+func (n *NodeIdentity) SetTokenBudget(budget int64) {
+	n.mu.Lock()
+	n.tokenBudget = budget
+	n.mu.Unlock()
 }
 
 // IsInitialized returns whether the node identity has been set up.

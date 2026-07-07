@@ -34,6 +34,7 @@ func main() {
 	initReputation("data")
 	initCredits("data")
 	initMessages("data")
+	initNodeWeightManager("data")
 
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
@@ -155,6 +156,11 @@ func main() {
 	mux.HandleFunc("GET /api/federation/config", withAuth(handleGetFederationConfig))
 	mux.HandleFunc("POST /api/federation/config", withAuth(handleSaveFederationConfig))
 	mux.HandleFunc("POST /api/federation/init-node", withAuth(handleInitNode))
+	mux.HandleFunc("GET /api/federation/weights", withAuth(handleGetNodeWeights))
+	mux.HandleFunc("POST /api/federation/weights", withAuth(handleSetNodeWeight))
+	mux.HandleFunc("GET /api/federation/approvals", withAuth(handleGetApprovals))
+	mux.HandleFunc("POST /api/federation/approvals/resolve", withAuth(handleResolveApproval))
+	mux.HandleFunc("POST /api/federation/token-budget", withAuth(handleSetTokenBudget))
 
 	// CORS middleware
 	handler := corsMiddleware(mux)
@@ -432,6 +438,7 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"tunnel_url":               cfg.Get("tunnel_url", ""),        // current quick tunnel URL
 		"federation_doc_version":   AppVersion,                       // current doc version
 		"federation_doc_read_version": cfg.Get("federation_doc_read_version", ""), // last read version
+		"node_approval_mode":       cfg.Get("node_approval_mode", "auto"),
 	})
 }
 
@@ -448,7 +455,7 @@ func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"federation_registry_url", "federation_registry_repo",
 		"gossip_interval_s", "heartbeat_interval_s",
 		"tunnel_enabled", "tunnel_mode", "tunnel_domain", "tunnel_url",
-		"federation_doc_read_version",
+		"federation_doc_read_version", "node_approval_mode",
 	} {
 		if v, ok := body[key]; ok {
 			cfg.Set(key, v)
@@ -488,6 +495,127 @@ func handleInitNode(w http.ResponseWriter, r *http.Request) {
 		"pub_key":     node.PubKeyB64(),
 		"github_user": body.GitHubUser,
 	})
+}
+
+// handleGetNodeWeights returns all per-node weight overrides.
+func handleGetNodeWeights(w http.ResponseWriter, r *http.Request) {
+	if nwm == nil {
+		writeJSON(w, 200, map[string]any{"overrides": []any{}, "approval_mode": "auto"})
+		return
+	}
+	overrides := nwm.GetOverrides()
+	if overrides == nil {
+		overrides = []*NodeWeightOverride{}
+	}
+	writeJSON(w, 200, map[string]any{
+		"overrides":     overrides,
+		"approval_mode": nwm.GetApprovalMode(),
+		"token_budget":  nwm.GetTokenBudget(),
+	})
+}
+
+// handleSetNodeWeight sets a per-node weight multiplier.
+func handleSetNodeWeight(w http.ResponseWriter, r *http.Request) {
+	if nwm == nil {
+		writeError(w, 500, "node weight manager not initialized")
+		return
+	}
+	var body struct {
+		NodeID string  `json:"node_id"`
+		Weight float64 `json:"weight"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.NodeID == "" {
+		writeError(w, 400, "node_id is required")
+		return
+	}
+	if body.Weight < 0 {
+		writeError(w, 400, "weight must be >= 0")
+		return
+	}
+
+	req := nwm.SetOverride(body.NodeID, body.Weight)
+	resp := map[string]any{
+		"node_id":  body.NodeID,
+		"weight":   body.Weight,
+		"approved": nwm.GetApprovalMode() == "auto" || (node != nil && body.NodeID == node.NodeID()),
+	}
+	if req != nil {
+		resp["approval_request"] = req
+		resp["approved"] = false
+	}
+	writeJSON(w, 200, resp)
+}
+
+// handleGetApprovals returns pending or all approval requests.
+func handleGetApprovals(w http.ResponseWriter, r *http.Request) {
+	if nwm == nil {
+		writeJSON(w, 200, map[string]any{"pending": []any{}, "all": []any{}})
+		return
+	}
+	pendingOnly := r.URL.Query().Get("pending") == "true"
+	if pendingOnly {
+		reqs := nwm.GetPendingRequests()
+		if reqs == nil {
+			reqs = []*ApprovalRequest{}
+		}
+		writeJSON(w, 200, map[string]any{"pending": reqs})
+	} else {
+		reqs := nwm.GetAllRequests()
+		if reqs == nil {
+			reqs = []*ApprovalRequest{}
+		}
+		writeJSON(w, 200, map[string]any{"all": reqs})
+	}
+}
+
+// handleResolveApproval approves or rejects a pending approval request.
+func handleResolveApproval(w http.ResponseWriter, r *http.Request) {
+	if nwm == nil {
+		writeError(w, 500, "node weight manager not initialized")
+		return
+	}
+	var body struct {
+		RequestID string `json:"request_id"`
+		Approve   bool   `json:"approve"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.RequestID == "" {
+		writeError(w, 400, "request_id is required")
+		return
+	}
+	if err := nwm.ResolveApproval(body.RequestID, body.Approve); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"status": "resolved", "request_id": body.RequestID, "approved": body.Approve})
+}
+
+// handleSetTokenBudget sets this node's declared token budget.
+func handleSetTokenBudget(w http.ResponseWriter, r *http.Request) {
+	if nwm == nil {
+		writeError(w, 500, "node weight manager not initialized")
+		return
+	}
+	var body struct {
+		Budget int64 `json:"budget"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if body.Budget < 0 {
+		writeError(w, 400, "budget must be >= 0")
+		return
+	}
+	nwm.SetTokenBudget(body.Budget)
+	writeJSON(w, 200, map[string]any{"token_budget": body.Budget})
 }
 
 // ============================================================
