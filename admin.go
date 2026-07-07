@@ -536,3 +536,26 @@ func handleSyncAllURLs(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, 200, map[string]any{"changed": changed, "total": len(allProviders)})
 }
+
+// ============================================================
+// Status handler
+// ============================================================
+
+func handleStatus(w http.ResponseWriter, r *http.Request) {
+	all := pm.GetAll()
+	enabled := 0
+	for _, p := range all {
+		if p.Enabled {
+			enabled++
+		}
+	}
+	writeJSON(w, 200, map[string]any{
+		"status":  "running",
+		"version": "1.0.0",
+		"providers": map[string]any{
+			"enabled": enabled,
+			"total":   len(all),
+		},
+		"models": len(pm.AllModels()),
+	})
+}

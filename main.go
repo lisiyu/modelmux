@@ -44,6 +44,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth/verify", withAuth(handleVerifyAuth))
 	mux.HandleFunc("GET /api/config", withAuth(handleGetConfig))
 	mux.HandleFunc("POST /api/config", withAuth(handleSaveConfig))
+	mux.HandleFunc("GET /api/status", withAuth(handleStatus))
 	mux.HandleFunc("GET /api/admin/info", withAuth(handleAdminInfo))
 	mux.HandleFunc("POST /api/admin/change-password", withAuth(handleChangePassword))
 	mux.HandleFunc("POST /api/admin/update-email", withAuth(handleUpdateEmail))
