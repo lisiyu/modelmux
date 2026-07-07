@@ -20,10 +20,28 @@ type RateLimiter struct {
 }
 
 // NewRateLimiter creates a new rate limiter with the given QPS limit.
+// Burst (maxTokens) is set to max(qps, 1.0) to ensure at least 1 request can pass.
 func NewRateLimiter(qps float64) *RateLimiter {
+	maxTok := qps
+	if maxTok < 1.0 {
+		maxTok = 1.0
+	}
 	return &RateLimiter{
-		tokens:     qps,
-		maxTokens:  qps,
+		tokens:     maxTok,
+		maxTokens:  maxTok,
+		refillRate: qps,
+		lastRefill: time.Now(),
+	}
+}
+
+// NewRateLimiterWithBurst creates a rate limiter with explicit burst capacity.
+func NewRateLimiterWithBurst(qps float64, burst float64) *RateLimiter {
+	if burst < 1.0 {
+		burst = 1.0
+	}
+	return &RateLimiter{
+		tokens:     burst,
+		maxTokens:  burst,
 		refillRate: qps,
 		lastRefill: time.Now(),
 	}
@@ -175,7 +193,7 @@ func rateLimitByIP(maxRequestsPerMinute float64, endpointName string) func(http.
 				entry, exists = ipRateLimiters.limiters[ip+endpointName]
 				if !exists {
 					entry = &ipRateLimitEntry{
-						limiter:  NewRateLimiter(qps),
+						limiter:  NewRateLimiterWithBurst(qps, maxRequestsPerMinute),
 						lastSeen: time.Now(),
 					}
 					ipRateLimiters.limiters[ip+endpointName] = entry
