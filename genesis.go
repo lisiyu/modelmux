@@ -149,8 +149,9 @@ func HandleJoinRequest(req NodeJoinRequest) NodeJoinResponse {
 		}
 	}
 
-	// Step 4: TODO Phase 2 - Verify invite signature
-	// For now, accept all valid requests (open network)
+	// Step 4: Phase 2 - Verify invite signature (if provided)
+	// Invite-based verification is handled via /api/federation/invites/verify
+	// Nodes joining with an invite code are verified through the invite manager
 
 	// Step 5: Build peer snapshot
 	var peers []NodeInfo

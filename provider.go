@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"sort"
@@ -562,6 +563,59 @@ func (m *ProviderManager) RoutingAdvice(model string) []map[string]any {
 		return out[i]["priority"].(int) < out[j]["priority"].(int)
 	})
 	return out
+}
+
+// SyncModels fetches the available model list from an OpenAI-compatible provider
+// and updates the provider's Models field. Returns the number of models synced.
+func (m *ProviderManager) SyncModels(providerID string) (int, error) {
+	p, ok := m.GetRaw(providerID)
+	if !ok {
+		return 0, fmt.Errorf("provider '%s' not found", providerID)
+	}
+
+	if p.Type != "openai_compatible" {
+		return 0, fmt.Errorf("sync only supported for openai_compatible providers (current type: %s)", p.Type)
+	}
+
+	if p.APIKey == "" {
+		return 0, fmt.Errorf("provider '%s' has no API key configured", providerID)
+	}
+
+	models := fetchRemoteModels(p)
+	if len(models) == 0 {
+		return 0, fmt.Errorf("no models returned from provider '%s'", providerID)
+	}
+
+	// Convert to ModelDef slice, preserving enabled state for existing models
+	existingModels := make(map[string]bool)
+	for _, md := range p.Models {
+		existingModels[md.ID] = md.Enabled
+	}
+
+	var newModels []ModelDef
+	for _, rm := range models {
+		enabled := true
+		if wasEnabled, exists := existingModels[rm["id"]]; exists {
+			enabled = wasEnabled
+		}
+		newModels = append(newModels, ModelDef{
+			ID:      rm["id"],
+			Name:    rm["name"],
+			Enabled: enabled,
+		})
+	}
+
+	m.mu.Lock()
+	if existing, ok := m.providers[providerID]; ok {
+		existing.Models = newModels
+		existing.UpdatedAt = time.Now().Format(time.RFC3339)
+		m.providers[providerID] = existing
+	}
+	m.mu.Unlock()
+	m.save()
+
+	slog.Info("provider models synced", "provider", providerID, "count", len(newModels))
+	return len(newModels), nil
 }
 
 // ClearAllAPIKeys removes API keys from all providers (security measure for password reset).

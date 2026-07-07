@@ -162,6 +162,11 @@ func (t *Tracker) RecordWithRetry(providerID, providerName, model string, prompt
 	}
 	t.mu.Unlock()
 
+	// Record metrics
+	if metrics != nil {
+		metrics.RecordRequest(model, providerID, int64(latencyMS), success, totalTokens)
+	}
+
 	// Add to request log ring buffer
 	t.addRequestLog(RequestLogEntry{
 		Timestamp:    now,

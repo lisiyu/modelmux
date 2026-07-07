@@ -111,7 +111,7 @@ select.form-input{appearance:none;cursor:pointer}
 <div class="container">
   <div class="header">
     <div class="logo">Multi-Provider Proxy</div>
-    <div class="logo-sub">v3.0 · 去中心化 AI 模型联邦管理</div>
+    <div class="logo-sub">v3.2.0 · 去中心化 AI 模型联邦管理</div>
     <div class="header-actions">
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
@@ -595,7 +595,9 @@ select.form-input{appearance:none;cursor:pointer}
 </div>
 
 <script>
-// ===== Auth =====
+// ================================================================
+// Module: CoreAuth - Authentication, utilities, and initialization
+// ================================================================
 let authToken = localStorage.getItem('admin_token') || '';
 async function authFetch(url, opts = {}) {
   opts.headers = { ...opts.headers, 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' };
@@ -608,6 +610,10 @@ function toast(msg, type = 'success') { const t = document.createElement('div');
 
 // ===== Init =====
 // Auth guard — redirect to login if no token
+
+// ================================================================
+// Module: Dashboard - Status overview and usage statistics
+// ================================================================
 if (!authToken) { location.href = '/login'; }
 
 let presets = [];
@@ -784,6 +790,9 @@ async function loadWeights() {
 }
 
 // ===== Sider Token Status =====
+// ================================================================
+// Module: SiderMonitor - Sider token status monitoring
+// ================================================================
 async function refreshSiderStatus() {
   try {
     const r = await authFetch('/api/providers/sider/status');
@@ -854,6 +863,9 @@ async function testSiderToken() {
 
 // ===== Providers =====
 let allProviders = [];
+// ================================================================
+// Module: ProviderManager - Provider CRUD, testing, and model management
+// ================================================================
 async function loadProviders() {
   const r = await authFetch('/api/providers');
   const d = await r.json();
@@ -878,6 +890,7 @@ function renderProviders() {
         </div>
         <div class="provider-actions">
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();editProvider('${p.id}')">编辑</button>
           <button class="btn btn-success btn-sm" onclick="event.stopPropagation();testProvider('${p.id}')">测试</button>
           <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();toggleProvider('${p.id}',${!enabled})">${enabled?'禁用':'启用'}</button>
@@ -971,6 +984,16 @@ async function syncProviderUrl(pid) {
     const r = await authFetch(`/api/providers/${pid}/sync-url`, { method: 'POST' });
     const d = await r.json();
     if (d.changed) { toast(`✅ ${d.message}`, 'success'); } else { toast(d.message, 'info'); }
+    await loadProviders();
+  } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+
+async function syncModels(pid) {
+  toast('正在同步模型列表...', 'info');
+  try {
+    const r = await authFetch(`/api/providers/${pid}/sync-models`, { method: 'POST' });
+    const d = await r.json();
+    if (d.success) { toast(`✅ 已同步 ${d.models_synced} 个模型`, 'success'); } else { toast(d.error || '同步失败', 'error'); }
     await loadProviders();
   } catch(e) { toast('同步失败: ' + e.message, 'error'); }
 }
@@ -1159,6 +1182,9 @@ async function loadProxyApiKey() {
 }
 
 // ===== SMTP =====
+// ================================================================
+// Module: Settings - SMTP, admin info, proxy API key configuration
+// ================================================================
 async function loadSmtp() {
   try { const r = await authFetch('/api/smtp/config'); const d = await r.json(); document.getElementById('smtpHost').value = d.host||''; document.getElementById('smtpPort').value = d.port||'587'; document.getElementById('smtpUser').value = d.username||''; document.getElementById('smtpFrom').value = d.from_email||''; document.getElementById('smtpTls').checked = d.use_tls!==false; } catch(e) {}
 }
@@ -1211,6 +1237,9 @@ async function importConfig(input) {
 }
 
 // ===== Request Logs =====
+// ================================================================
+// Module: LogsAndHealth - Request logs and health status display
+// ================================================================
 async function refreshLogs() {
   try {
     const r = await authFetch('/api/logs');
@@ -1256,6 +1285,9 @@ async function refreshHealth() {
 }
 
 // ===== Invite Codes & Consumers =====
+// ================================================================
+// Module: MultiUser - Invite codes and consumer management
+// ================================================================
 async function refreshInviteCodes() {
   try {
     const r = await authFetch('/api/invite-codes');
@@ -1328,6 +1360,9 @@ async function deleteConsumer(id) {
 // Federation (v3.0)
 // ============================================================
 
+// ================================================================
+// Module: Federation - Node management, trust pool, and P2P discovery
+// ================================================================
 async function loadFederationStatus() {
   try {
     const res = await authFetch('/api/federation/status');
@@ -1702,6 +1737,9 @@ async function ackFederationDoc() {
   }
 }
 
+// ================================================================
+// Module: Messages - Federation inbox/outbox messaging
+// ================================================================
 async function showInbox() {
   try {
     const res = await authFetch('/api/federation/messages/inbox');
@@ -1759,6 +1797,22 @@ init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminI
 
 // Auto-refresh status and usage every 30 seconds
 setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
+
+// ================================================================
+// Module: RealtimeEvents - SSE connection for live updates
+// ================================================================
+(function connectSSE() {
+  if (!authToken) return;
+  try {
+    const es = new EventSource('/events');
+    es.addEventListener('health_change', (e) => {
+      try { const d = JSON.parse(e.data); refreshHealth(); toast(`Health: ${d.data.provider_id} → ${d.data.new_status}`, 'info'); } catch(_) {}
+    });
+    es.addEventListener('config_update', () => { loadStatus(); });
+    es.addEventListener('provider_status', () => { loadProviders(); refreshHealth(); });
+    es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
+  } catch(_) {}
+})();
 </script>
 </body>
 </html>
