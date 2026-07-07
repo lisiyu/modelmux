@@ -826,6 +826,63 @@ select.form-input{appearance:none;cursor:pointer}
         <div id="netPeersList" style="font-size:12px;color:var(--text-muted)">暂无连接节点</div>
       </div>
 
+      <!-- 贡献统计 (Phase 2) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 贡献统计</div>
+        <div class="status-grid">
+          <div class="status-item">
+            <div>
+              <div class="status-label">总贡献积分</div>
+              <div class="status-value" id="netContribPoints">0</div>
+            </div>
+          </div>
+          <div class="status-item">
+            <div>
+              <div class="status-label">已冻结额度</div>
+              <div class="status-value" id="netFrozenQuota">0</div>
+            </div>
+          </div>
+          <div class="status-item">
+            <div>
+              <div class="status-label">已签发密钥</div>
+              <div class="status-value" id="netIssuedKeys">0</div>
+            </div>
+          </div>
+          <div class="status-item">
+            <div>
+              <div class="status-label">中继成功/失败</div>
+              <div class="status-value" id="netRelaySuccess">0 / 0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 密钥管理 (Phase 2) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔑 签名密钥管理</div>
+        <!-- 签发密钥表单 -->
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px">
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">签发新密钥</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <input class="form-input" id="mkConsumerId" placeholder="Consumer ID" style="font-size:12px">
+            <input class="form-input" id="mkQuota" type="number" placeholder="额度 (默认15000)" style="font-size:12px">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <input class="form-input" id="mkModels" placeholder="允许模型 (逗号分隔)" style="font-size:12px">
+            <input class="form-input" id="mkExpDays" type="number" placeholder="有效天数 (默认30)" style="font-size:12px">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="issueSignedKey()">🔐 签发密钥</button>
+        </div>
+        <!-- 已签发密钥列表 -->
+        <div id="netKeysList" style="font-size:12px;color:var(--text-muted)">暂无已签发密钥</div>
+      </div>
+
+      <!-- 节点心跳状态 (Phase 2) -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">💓 节点心跳状态</div>
+        <div id="netHeartbeatList" style="font-size:12px;color:var(--text-muted)">暂无心跳数据</div>
+      </div>
+
       <!-- 退出按钮 -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;text-align:center">
         <button class="btn btn-danger" onclick="disableNetwork()" style="padding:10px 24px">🚪 退出共享网络</button>
@@ -2370,6 +2427,11 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
 
         // Load peers
         loadNetworkPeers();
+
+        // Phase 2: Load signed keys, contributions, heartbeat
+        loadSignedKeys();
+        loadContributions();
+        loadHeartbeatStatus();
       } else {
         modeLabel.textContent = '个人模式';
         modeLabel.className = 'badge badge-blue';
@@ -2568,6 +2630,137 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
         await loadNetworkStatus();
       } catch(e) {
         toast('移除失败: ' + e.message, 'error');
+      }
+    }
+
+    // ========== Phase 2: Signed Keys, Contributions, Heartbeat ==========
+
+    async function issueSignedKey() {
+      const consumerId = document.getElementById('mkConsumerId').value.trim();
+      if (!consumerId) { toast('请输入 Consumer ID', 'error'); return; }
+      const quota = parseInt(document.getElementById('mkQuota').value) || 15000;
+      const modelsStr = document.getElementById('mkModels').value.trim();
+      const models = modelsStr ? modelsStr.split(',').map(m => m.trim()).filter(m => m) : [];
+      const expDays = parseInt(document.getElementById('mkExpDays').value) || 30;
+      try {
+        const r = await authFetch('/api/network/keys/issue', {
+          method: 'POST',
+          body: JSON.stringify({ consumer_id: consumerId, quota, models, exp_days: expDays })
+        });
+        const d = await r.json();
+        if (!r.ok) { toast('签发失败: ' + (d.error || d.message || '未知错误'), 'error'); return; }
+        // Show the key
+        const keyText = d.key;
+        toast('密钥签发成功', 'success');
+        // Copy to clipboard
+        try { await navigator.clipboard.writeText(keyText); } catch(e) {}
+        // Show in a prompt for manual copy
+        prompt('密钥已签发，请复制保存（此密钥仅显示一次）:', keyText);
+        // Clear form
+        document.getElementById('mkConsumerId').value = '';
+        document.getElementById('mkQuota').value = '';
+        document.getElementById('mkModels').value = '';
+        document.getElementById('mkExpDays').value = '';
+        // Refresh list
+        loadSignedKeys();
+        loadContributions();
+      } catch(e) {
+        toast('签发失败: ' + e.message, 'error');
+      }
+    }
+
+    async function loadSignedKeys() {
+      try {
+        const r = await authFetch('/api/network/keys');
+        const d = await r.json();
+        const el = document.getElementById('netKeysList');
+        if (!el) return;
+        if (!d.keys || d.keys.length === 0) {
+          el.innerHTML = '<div style="color:var(--text-muted)">暂无已签发密钥</div>';
+          return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:6px">';
+        d.keys.forEach(k => {
+          const revoked = k.revoked;
+          const statusBadge = revoked
+            ? '<span style="color:#ef4444;font-weight:600">已撤销</span>'
+            : '<span style="color:#22c55e;font-weight:600">有效</span>';
+          const remaining = k.payload ? (k.payload.quota - k.payload.used) : 0;
+          const expStr = k.payload && k.payload.exp ? new Date(k.payload.exp * 1000).toLocaleDateString() : '-';
+          const modelStr = k.payload && k.payload.models ? k.payload.models.join(', ') : '全部';
+          html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
+          html += '<div>';
+          html += '<div style="font-weight:600;margin-bottom:2px">' + k.consumer_id + ' ' + statusBadge + '</div>';
+          html += '<div style="color:var(--text-muted)">额度: ' + remaining + '/' + (k.payload ? k.payload.quota : 0) + ' | 模型: ' + modelStr + ' | 过期: ' + expStr + '</div>';
+          html += '</div>';
+          if (!revoked) {
+            html += '<button class="btn btn-sm" style="background:#ef4444;color:white;padding:4px 10px;font-size:11px" onclick="revokeSignedKey(\'' + k.consumer_id + '\')">撤销</button>';
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+        // Update issued keys count
+        setText('netIssuedKeys', d.keys.filter(k => !k.revoked).length);
+      } catch(e) {
+        console.warn('load keys failed', e);
+      }
+    }
+
+    async function revokeSignedKey(consumerId) {
+      if (!confirm('确定撤销此密钥？撤销后该消费者将无法继续使用。')) return;
+      try {
+        const r = await authFetch('/api/network/keys/' + encodeURIComponent(consumerId), { method: 'DELETE' });
+        if (!r.ok) { toast('撤销失败', 'error'); return; }
+        toast('密钥已撤销', 'success');
+        loadSignedKeys();
+        loadContributions();
+      } catch(e) {
+        toast('撤销失败: ' + e.message, 'error');
+      }
+    }
+
+    async function loadContributions() {
+      try {
+        const r = await authFetch('/api/network/contributions');
+        const d = await r.json();
+        setText('netContribPoints', d.contrib_points || 0);
+        setText('netFrozenQuota', d.frozen_quota || 0);
+        setText('netRelaySuccess', (d.relay_success || 0) + ' / ' + (d.relay_failed || 0));
+      } catch(e) {
+        console.warn('load contributions failed', e);
+      }
+    }
+
+    async function loadHeartbeatStatus() {
+      try {
+        const r = await authFetch('/api/network/peers');
+        const d = await r.json();
+        const el = document.getElementById('netHeartbeatList');
+        if (!el) return;
+        if (!d.peers || d.peers.length === 0) {
+          el.innerHTML = '<div style="color:var(--text-muted)">暂无心跳数据</div>';
+          return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:4px">';
+        d.peers.forEach(p => {
+          const isOnline = p.status === 'online';
+          const dot = isOnline ? '🟢' : '🔴';
+          const lastSeen = p.last_seen ? new Date(p.last_seen).toLocaleString() : '-';
+          const models = (p.models || []).join(', ') || '-';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-secondary);border-radius:6px">';
+          html += '<div>';
+          html += '<div style="font-weight:500">' + dot + ' ' + (p.name || p.node_id) + '</div>';
+          html += '<div style="color:var(--text-muted);font-size:11px">ID: ' + p.node_id + ' | 最后心跳: ' + lastSeen + '</div>';
+          html += '<div style="color:var(--text-muted);font-size:11px">模型: ' + models + '</div>';
+          html += '</div>';
+          html += '<div style="font-size:11px;color:' + (isOnline ? '#22c55e' : '#ef4444') + ';font-weight:600">' + (isOnline ? '在线' : '离线') + '</div>';
+          html += '</div>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+      } catch(e) {
+        console.warn('load heartbeat failed', e);
       }
     }
 

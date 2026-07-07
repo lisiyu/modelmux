@@ -32,22 +32,31 @@ const (
 	refreshInterval = 5 * time.Minute  // 地址刷新间隔
 )
 
+// ContribRecord tracks individual contribution events (Phase 2)
+type ContribRecord struct {
+	Timestamp  string `json:"timestamp"`
+	TokensUsed int64  `json:"tokens_used"`
+	Requests   int64  `json:"requests"`
+	FromNodeID string `json:"from_node_id"`
+}
+
 // NetworkConfig holds all shared network configuration
 type NetworkConfig struct {
-	Mode              NetworkMode  `json:"mode"`
-	ConsentAccepted   bool         `json:"consent_accepted"`
-	ConsentTime       string       `json:"consent_time"`
-	NodeName          string       `json:"node_name"`
-	NodeID            string       `json:"node_id"`
-	BootstrapNodes    []string     `json:"bootstrap_nodes"`
-	SharedModels      []string     `json:"shared_models"`
-	MaxDailyRequests  int          `json:"max_daily_requests"`
-	ContribPoints     int64        `json:"contrib_points"`
-	Peers             []PeerInfo   `json:"peers"`
-	Stats             NetworkStats `json:"stats"`
-	Addresses         []string     `json:"addresses"`
-	LastAddressUpdate string       `json:"last_address_update"`
-	RelayEnabled      bool         `json:"relay_enabled"`
+	Mode              NetworkMode     `json:"mode"`
+	ConsentAccepted   bool            `json:"consent_accepted"`
+	ConsentTime       string          `json:"consent_time"`
+	NodeName          string          `json:"node_name"`
+	NodeID            string          `json:"node_id"`
+	BootstrapNodes    []string        `json:"bootstrap_nodes"`
+	SharedModels      []string        `json:"shared_models"`
+	MaxDailyRequests  int             `json:"max_daily_requests"`
+	ContribPoints     int64           `json:"contrib_points"`
+	ContribRecords    []ContribRecord `json:"contrib_records"`
+	Peers             []PeerInfo      `json:"peers"`
+	Stats             NetworkStats    `json:"stats"`
+	Addresses         []string        `json:"addresses"`
+	LastAddressUpdate string          `json:"last_address_update"`
+	RelayEnabled      bool            `json:"relay_enabled"`
 }
 
 // PeerInfo represents a connected peer in the shared network

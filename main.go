@@ -56,6 +56,29 @@ func main() {
 	initNetworkManager("data")
 	netMgr.Init()
 
+	// Initialize signed key store (Phase 2)
+	initKeyStore("data")
+
+	// Start heartbeat loop (Phase 2)
+	startHeartbeatLoop()
+
+	// Register with bootstrap nodes (Phase 2)
+	go func() {
+		time.Sleep(3 * time.Second) // wait for tunnel to establish
+		registerWithBootstraps()
+	}()
+
+	// Periodic key store save (Phase 2)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if keyStore != nil {
+				keyStore.SaveAsync()
+			}
+		}
+	}()
+
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
 	pm.save()
@@ -214,6 +237,18 @@ func main() {
 	mux.HandleFunc("DELETE /api/network/peers/{id}", withAuth(handleNetworkRemovePeer))
 	mux.HandleFunc("GET /api/network/resolve/{id}", handleNetworkResolve)
 	mux.HandleFunc("GET /api/network/routes", withAuth(handleNetworkRoutes))
+
+	// P2P Signed Keys (Phase 2)
+	mux.HandleFunc("POST /api/network/keys/issue", withAuth(handleNetworkKeyIssue))
+	mux.HandleFunc("GET /api/network/keys", withAuth(handleNetworkKeyList))
+	mux.HandleFunc("DELETE /api/network/keys/{consumer_id}", withAuth(handleNetworkKeyRevoke))
+	mux.HandleFunc("POST /api/network/keys/validate", handleNetworkKeyValidate)
+	mux.HandleFunc("GET /api/network/contributions", withAuth(handleNetworkContributions))
+
+	// Node Heartbeat & Discovery (Phase 2)
+	mux.HandleFunc("POST /api/network/heartbeat", handleNetworkHeartbeat)
+	mux.HandleFunc("GET /api/node/pubkey", handleNodePubKey)
+	mux.HandleFunc("GET /api/node/info", handleNodeInfo)
 
 	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
 	// Register per-method to avoid conflict with GET / admin page handler

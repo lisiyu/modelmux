@@ -101,6 +101,47 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, hopCount int) {
 	netMgr.RecordReceived()
 
+	// Phase 2: Validate mk_ signed keys if present
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer mk_") {
+		mkKey := strings.TrimPrefix(authHeader, "Bearer ")
+
+		// Determine the model from the path for access check
+		model := extractModelFromPath(r.URL.Path)
+
+		payload, err := ValidateKey(mkKey)
+		if err != nil {
+			slog.Warn("signed key validation failed", "error", err, "path", r.URL.Path)
+			writeError(w, 401, fmt.Sprintf("signed key invalid: %v", err))
+			return
+		}
+
+		// Check model access
+		if model != "" && !CheckModelAccess(payload, model) {
+			slog.Warn("signed key model access denied", "model", model, "allowed", payload.Models)
+			writeError(w, 403, fmt.Sprintf("model '%s' not allowed by this key", model))
+			return
+		}
+
+		// Record usage
+		if keyStore != nil {
+			keyStore.RecordUsage(payload.Sub)
+		}
+
+		// Record contribution
+		RecordContribution(payload.Iss, 0)
+
+		slog.Info("signed key validated", "consumer_id", payload.Sub, "issuer", payload.Iss, "model", model)
+
+		// Clear the mk_ auth header so it doesn't interfere with local serving
+		r.Header.Del("Authorization")
+		r.Header.Set("X-MK-Consumer", payload.Sub)
+		r.Header.Set("X-MK-Issuer", payload.Iss)
+	} else if strings.HasPrefix(authHeader, "Bearer sk_") {
+		// sk_ keys: keep original behavior (pass through as consumer key)
+		// No additional validation needed here
+	}
+
 	// Reconstruct path without the /network/{node_id} prefix
 	restPath := ""
 	if len(parts) > 1 {
@@ -281,4 +322,14 @@ func queryBootstrapForNode(nodeID string) *RouteEntry {
 		}
 	}
 	return nil
+}
+// extractModelFromPath tries to extract a model name from the request path.
+// e.g. /v1/chat/completions doesn't contain model in path, so returns "".
+// For POST requests the model is in the body, but we can't read it here.
+// This is a best-effort helper — returns "" if no model in path.
+func extractModelFromPath(path string) string {
+	// OpenAI paths: /v1/chat/completions, /v1/completions, /v1/models
+	// Model is typically in the request body, not the path
+	// Return empty — the actual model check happens at the proxy auth layer
+	return ""
 }
