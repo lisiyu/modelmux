@@ -319,27 +319,41 @@ select.form-input{appearance:none;cursor:pointer}
 
   <div class="card" id="federationCard">
     <div class="card-title"><span class="icon">🌐</span> 联邦网络 v3.0 <span id="fedEnabledStatus" style="font-size:12px;font-weight:normal;margin-left:8px"></span></div>
+
+    <!-- 联邦说明文档 -->
+    <div id="fedDocBanner" style="display:none;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(99,179,237,.08));border:1px solid var(--accent-start);border-radius:8px;padding:14px 18px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:600;font-size:14px;margin-bottom:4px">📋 联邦网络说明文档已更新 <span id="fedDocVersion" style="font-size:12px;color:var(--text-muted)"></span></div>
+          <div style="font-size:12px;color:var(--text-secondary)">启用联邦网络前，请先阅读说明文档，了解您的权利与义务</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px">
+          <a href="https://github.com/lisiyu/modelmux/blob/main/docs/FEDERATION.md" target="_blank" class="btn btn-secondary btn-sm">📖 阅读文档</a>
+          <button class="btn btn-primary btn-sm" onclick="ackFederationDoc()">✅ 已阅读</button>
+        </div>
+      </div>
+    </div>
     
     <!-- 节点身份 -->
     <div class="status-grid" id="fedNodeInfo">
-      <div class="status-item">
+      <div class="status-item" title="您的节点唯一标识符，由 Ed25519 公钥生成，格式 mm-xxxx。全局唯一，不可更改">
         <div class="status-dot green"></div>
         <div>
-          <div class="status-label">节点 ID</div>
+          <div class="status-label">节点 ID <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="由 Ed25519 公钥前16字节 Base58 编码生成">ⓘ</span></div>
           <div class="status-value" id="fedNodeId">-</div>
         </div>
       </div>
-      <div class="status-item">
+      <div class="status-item" title="绑定的 GitHub 用户名，用于身份验证和 Registry 发布">
         <div class="status-dot green"></div>
         <div>
-          <div class="status-label">GitHub</div>
+          <div class="status-label">GitHub 身份 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="可选绑定，用于在联邦网络中标识您的身份">ⓘ</span></div>
           <div class="status-value" id="fedGithub">未绑定</div>
         </div>
       </div>
-      <div class="status-item">
+      <div class="status-item" title="联邦网络内的积分余额。提供 Provider 被调用可赚取积分，消费积分可使用他人资源或发送 P2P 消息">
         <div class="status-dot green"></div>
         <div>
-          <div class="status-label">积分余额</div>
+          <div class="status-label">积分余额 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="由签名交易账本推导，所有节点持有完整副本">ⓘ</span></div>
           <div class="status-value" id="fedCredits">0</div>
         </div>
       </div>
@@ -347,27 +361,27 @@ select.form-input{appearance:none;cursor:pointer}
 
     <!-- 联邦概览 -->
     <div class="status-grid" style="margin-bottom:16px">
-      <div class="status-item">
+      <div class="status-item" title="当前信任池中已知的节点总数，通过 Gossip 协议同步">
         <div>
-          <div class="status-label">网络节点</div>
+          <div class="status-label">网络节点 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="信任池中所有已知节点数量">ⓘ</span></div>
           <div class="status-value" id="fedTotalNodes">0</div>
         </div>
       </div>
-      <div class="status-item">
+      <div class="status-item" title="作为网络引导入口的种子节点数量，新节点通过种子节点首次加入网络">
         <div>
-          <div class="status-label">种子节点</div>
+          <div class="status-label">种子节点 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="新节点通过种子节点首次发现网络并加入">ⓘ</span></div>
           <div class="status-value" id="fedSeedNodes">0</div>
         </div>
       </div>
-      <div class="status-item">
+      <div class="status-item" title="中继模式允许您的节点为其他节点转发 P2P 消息和 Provider 请求，开启后可获得额外积分奖励">
         <div>
-          <div class="status-label">中继状态</div>
+          <div class="status-label">中继状态 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="开启后您的节点可转发消息/请求，赚取积分">ⓘ</span></div>
           <div class="status-value" id="fedRelayStatus">-</div>
         </div>
       </div>
-      <div class="status-item">
+      <div class="status-item" title="基于调用成功率(40%)、延迟(25%)、正常运行时间(20%)、peer评价(15%)的综合评分。S≥200 A≥100 B≥50 C≥20 D<20">
         <div>
-          <div class="status-label">信誉等级</div>
+          <div class="status-label">信誉等级 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="S/A/B/C/D 五级，D级7天后可能被移除">ⓘ</span></div>
           <div class="status-value" id="fedRepGrade">-</div>
         </div>
       </div>
@@ -378,25 +392,25 @@ select.form-input{appearance:none;cursor:pointer}
       <div class="card-title" style="font-size:14px"><span class="icon">⚙️</span> 联邦配置</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group">
-          <label class="form-label">启用联邦网络</label>
+          <label class="form-label" title="开启后节点加入联邦网络，开始 Gossip 同步">启用联邦网络 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="开启后您的节点将加入去中心化联邦网络，开始同步信任池、交换信誉评分">ⓘ</span></label>
           <select class="form-input" id="fedEnabled">
             <option value="false">关闭</option>
             <option value="true">开启</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">启用中继</label>
+          <label class="form-label" title="允许您的节点为其他节点转发消息和请求">启用中继 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="开启后您的节点转发 P2P 消息和 Provider 请求，可赚取额外积分">ⓘ</span></label>
           <select class="form-input" id="fedRelay">
             <option value="false">关闭</option>
             <option value="true">开启</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Registry 仓库</label>
+          <label class="form-label" title="GitHub 仓库地址，用于拉取初始种子节点列表（格式: owner/repo）">Registry 仓库 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="GitHub 仓库，存放 federation_registry.json 种子节点列表">ⓘ</span></label>
           <input class="form-input" id="fedRepo" placeholder="lisiyu/modelmux">
         </div>
         <div class="form-group">
-          <label class="form-label">Gossip 间隔(秒)</label>
+          <label class="form-label" title="Gossip 协议同步间隔（秒），间隔越短数据越新鲜但消耗更多带宽">Gossip 间隔(秒) <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="节点间交换数据的频率，推荐 30 秒">ⓘ</span></label>
           <input class="form-input" id="fedGossipInterval" type="number" value="30">
         </div>
       </div>
@@ -406,32 +420,32 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
     </div>
 
-    <!-- 内网穿透与域名 -->
+    <!-- 公网访问（Cloudflare Tunnel）-->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
       <div class="card-title" style="font-size:14px"><span class="icon">🌍</span> 公网访问（Cloudflare Tunnel）</div>
-      <div class="section-note" style="margin-bottom:12px">默认使用 Cloudflare Quick Tunnel（免费、无需域名），自动生成公网地址。如需绑定自定义域名，请切换为「指定域名」模式。</div>
+      <div class="section-note" style="margin-bottom:12px">让其他联邦节点通过公网访问您的 Provider 资源。默认使用 Quick Tunnel（免费、无需域名）。如需固定地址，可绑定自定义域名。</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group">
-          <label class="form-label">启用公网访问</label>
+          <label class="form-label" title="启用后自动创建 Cloudflare Tunnel，生成公网可访问的 HTTPS 地址">启用公网访问 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="通过 Cloudflare Tunnel 将内网端口暴露到公网">ⓘ</span></label>
           <select class="form-input" id="tunnelEnabled">
             <option value="false">关闭</option>
             <option value="true">开启</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">隧道模式</label>
+          <label class="form-label" title="Quick Tunnel 自动分配临时地址（重启后变化）；指定域名模式使用您自己的域名（永久地址）">隧道模式 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="Quick=临时地址 / 指定域名=永久地址">ⓘ</span></label>
           <select class="form-input" id="tunnelMode" onchange="toggleDomainInput()">
             <option value="quick">Quick Tunnel（自动分配，无需域名）</option>
             <option value="named">指定域名（需已有 Cloudflare 托管的域名）</option>
           </select>
         </div>
         <div class="form-group" id="domainInputGroup" style="display:none;grid-column:1/-1">
-          <label class="form-label">自定义域名</label>
+          <label class="form-label" title="您在 Cloudflare 账户中托管的域名，系统会自动创建 DNS CNAME 记录和 TLS 证书">自定义域名 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="需在 Cloudflare 账户中已托管该域名">ⓘ</span></label>
           <input class="form-input" id="tunnelDomain" placeholder="mux.example.com">
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">域名需在 Cloudflare 账户中托管，安装时会自动创建 DNS 记录和 TLS 证书</div>
         </div>
         <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">当前公网地址</label>
+          <label class="form-label" title="当前通过 Cloudflare Tunnel 获得的公网 HTTPS 地址，其他节点通过此地址访问您">当前公网地址 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="其他联邦节点通过此地址访问您的 Provider">ⓘ</span></label>
           <div style="display:flex;gap:8px;align-items:center">
             <input class="form-input" id="tunnelUrl" readonly placeholder="启动后自动生成" style="background:var(--bg-secondary);color:var(--text-muted)">
             <button class="btn btn-secondary btn-sm" onclick="copyTunnelUrl()" style="flex-shrink:0">📋 复制</button>
@@ -442,7 +456,7 @@ select.form-input{appearance:none;cursor:pointer}
 
     <!-- GitHub 绑定 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-      <div class="card-title" style="font-size:14px"><span class="icon">🔗</span> GitHub 身份绑定</div>
+      <div class="card-title" style="font-size:14px"><span class="icon">🔗</span> GitHub 身份绑定 <span style="cursor:help;border-bottom:1px dashed var(--text-muted);font-size:11px;font-weight:normal" title="绑定 GitHub 后，您的节点在联邦网络中显示为用户名而非匿名 NodeID，也可用于在 Registry 发布自己的 Provider">ⓘ 绑定后在联邦网络中以用户名展示身份，而非匿名 NodeID</span></div>
       <div style="display:flex;gap:12px;align-items:end">
         <div class="form-group" style="flex:1;margin:0">
           <input class="form-input" id="fedGithubUser" placeholder="GitHub 用户名">
@@ -453,13 +467,13 @@ select.form-input{appearance:none;cursor:pointer}
 
     <!-- 信任池节点列表 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px">
-      <div class="card-title" style="font-size:14px"><span class="icon">📡</span> 网络节点</div>
+      <div class="card-title" style="font-size:14px"><span class="icon">📡</span> 信任池节点列表 <span style="cursor:help;border-bottom:1px dashed var(--text-muted);font-size:11px;font-weight:normal" title="通过 Gossip 协议同步的所有已知节点，包含节点ID、地址、信誉等信息">ⓘ 通过 Gossip 协议自动同步的已知节点</span></div>
       <div id="fedNodeList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
     </div>
 
     <!-- P2P 消息 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
-      <div class="card-title" style="font-size:14px"><span class="icon">💬</span> P2P 消息 <span id="fedUnreadBadge" class="badge badge-blue" style="display:none;margin-left:8px">0</span></div>
+      <div class="card-title" style="font-size:14px"><span class="icon">💬</span> P2P 消息 <span id="fedUnreadBadge" class="badge badge-blue" style="display:none;margin-left:8px">0</span> <span style="cursor:help;border-bottom:1px dashed var(--text-muted);font-size:11px;font-weight:normal" title="端到端加密的节点间消息，通过 Gossip 中继投递，发送消耗 5 积分">ⓘ 端到端加密，发送消耗 5 积分</span></div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <button class="btn btn-secondary btn-sm" onclick="showInbox()" id="btnInbox">收件箱</button>
         <button class="btn btn-secondary btn-sm" onclick="showOutbox()" id="btnOutbox">发件箱</button>
@@ -1381,6 +1395,40 @@ function copyTunnelUrl() {
   }
 }
 
+// Federation doc version check
+const FEDERATION_DOC_VERSION = '3.0.0';
+
+async function checkFederationDoc() {
+  try {
+    const res = await authFetch('/api/federation/config');
+    const data = await res.json();
+    const lastRead = data.federation_doc_read_version || '';
+    const banner = document.getElementById('fedDocBanner');
+    const versionEl = document.getElementById('fedDocVersion');
+    if (lastRead !== FEDERATION_DOC_VERSION) {
+      banner.style.display = 'block';
+      versionEl.textContent = `(当前 v${FEDERATION_DOC_VERSION}${lastRead ? '，上次已读 v' + lastRead : '，首次阅读'})`;
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+async function ackFederationDoc() {
+  try {
+    const res = await authFetch('/api/federation/config', {
+      method: 'POST',
+      body: JSON.stringify({ federation_doc_read_version: FEDERATION_DOC_VERSION })
+    });
+    if (res.ok) {
+      document.getElementById('fedDocBanner').style.display = 'none';
+      toast('已确认阅读联邦网络说明文档', 'success');
+    }
+  } catch(e) {
+    toast('确认失败', 'error');
+  }
+}
+
 async function showInbox() {
   try {
     const res = await authFetch('/api/federation/messages/inbox');
@@ -1434,7 +1482,7 @@ async function sendMessage(toNode, subject, body) {
 }
 
 // ===== Start =====
-init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); });
+init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); });
 
 // Auto-refresh status and usage every 30 seconds
 setInterval(() => { loadStatus(); refreshUsage(); }, 30000);

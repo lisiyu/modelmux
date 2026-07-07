@@ -430,6 +430,8 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"tunnel_mode":              cfg.Get("tunnel_mode", "quick"), // quick | named
 		"tunnel_domain":            cfg.Get("tunnel_domain", ""),     // custom domain e.g. mux.example.com
 		"tunnel_url":               cfg.Get("tunnel_url", ""),        // current quick tunnel URL
+		"federation_doc_version":   AppVersion,                       // current doc version
+		"federation_doc_read_version": cfg.Get("federation_doc_read_version", ""), // last read version
 	})
 }
 
@@ -446,6 +448,7 @@ func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"federation_registry_url", "federation_registry_repo",
 		"gossip_interval_s", "heartbeat_interval_s",
 		"tunnel_enabled", "tunnel_mode", "tunnel_domain", "tunnel_url",
+		"federation_doc_read_version",
 	} {
 		if v, ok := body[key]; ok {
 			cfg.Set(key, v)
