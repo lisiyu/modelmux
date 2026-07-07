@@ -133,11 +133,20 @@ select.form-input{appearance:none;cursor:pointer}
     <div class="card-title"><span class="icon">🔑</span> API 访问认证</div>
     <div class="section-note">设置后，外部应用调用 /v1/* 接口需携带 <code>Authorization: Bearer &lt;your-key&gt;</code>；留空则不校验（仅适合内网使用）</div>
     <div class="form-group">
-      <label class="form-label">API 接口地址</label>
+      <label class="form-label">📡 个人 API 接口地址</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input class="form-input" id="proxyApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')">
         <button class="btn btn-secondary btn-sm" onclick="copyApiUrl()">📋 复制</button>
       </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">个人使用：直接调用此地址访问您配置的模型</div>
+    </div>
+    <div class="form-group" id="networkUrlGroup" style="display:none">
+      <label class="form-label">🌐 共享网络 API 接口地址</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="networkApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;border:1px solid rgba(108,99,255,.3)" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')">
+        <button class="btn btn-secondary btn-sm" onclick="copyNetworkUrl()">📋 复制</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">共享网络：其他节点通过此地址访问您的模型能力（通过去中心化 relay 转发）</div>
     </div>
     <div class="form-group"><label class="form-label">Proxy API Key</label>
       <div style="display:flex;gap:8px">
@@ -1493,6 +1502,15 @@ function copyApiUrl() {
   }
 }
 
+function copyNetworkUrl() {
+  const urlEl = document.getElementById('networkApiUrl');
+  if (urlEl) {
+    urlEl.select();
+    document.execCommand('copy');
+    toast('已复制到剪贴板');
+  }
+}
+
 // ===== Proxy API Key =====
 function generateApiKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -2406,6 +2424,14 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
         inactive.style.display = 'none';
         active.style.display = '';
 
+        // Show network URL group and set value
+        const networkUrlGroup = document.getElementById('networkUrlGroup');
+        const networkUrlInput = document.getElementById('networkApiUrl');
+        if (networkUrlGroup) networkUrlGroup.style.display = '';
+        if (networkUrlInput && s.relay_consumer_url) {
+          networkUrlInput.value = s.relay_consumer_url;
+        }
+
         // Fill status fields
         setText('netNodeName', s.node_name || '-');
         setText('netNodeId', s.node_id || '-');
@@ -2440,6 +2466,10 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
         modeLabel.style.marginLeft = '8px';
         inactive.style.display = '';
         active.style.display = 'none';
+        
+        // Hide network URL group in personal mode
+        const networkUrlGroup = document.getElementById('networkUrlGroup');
+        if (networkUrlGroup) networkUrlGroup.style.display = 'none';
       }
     }
 
