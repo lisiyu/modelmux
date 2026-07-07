@@ -528,6 +528,27 @@ select.form-input{appearance:none;cursor:pointer}
       <div id="approvalRequests" style="font-size:12px;color:var(--text-muted)">加载中...</div>
     </div>
 
+    <!-- 邀请管理 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+      <div class="card-title" style="font-size:14px"><span class="icon">📨</span> 邀请管理 <span style="cursor:help;border-bottom:1px dashed var(--text-muted);font-size:11px;font-weight:normal" title="创建邀请码分享给其他节点，邀请他们加入联邦网络或授权访问您的 Provider 资源">ⓘ 邀请其他节点加入网络</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;margin-bottom:12px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label" title="被邀请方的节点 ID 或公钥，留空则生成公开邀请（任何人可用）">被邀请方 <span style="cursor:help;border-bottom:1px dashed var(--text-muted)" title="留空=公开邀请，填写节点ID=定向邀请">ⓘ</span></label>
+          <input class="form-input" id="inviteTarget" placeholder="mm-xxxxx 或留空">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">邀请类型</label>
+          <select class="form-input" id="inviteType">
+            <option value="public">公开邀请（任何人可用）</option>
+            <option value="directed">定向邀请（指定节点）</option>
+            <option value="chain">链式邀请（受邀者可再邀请）</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="createInvite()" style="margin-bottom:0">创建邀请</button>
+      </div>
+      <div id="inviteList" style="font-size:12px;color:var(--text-muted)">加载中...</div>
+    </div>
+
     <!-- P2P 消息 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:16px">
       <div class="card-title" style="font-size:14px"><span class="icon">💬</span> P2P 消息 <span id="fedUnreadBadge" class="badge badge-blue" style="display:none;margin-left:8px">0</span> <span style="cursor:help;border-bottom:1px dashed var(--text-muted);font-size:11px;font-weight:normal" title="端到端加密的节点间消息，通过 Gossip 中继投递，发送消耗 5 积分">ⓘ 端到端加密，发送消耗 5 积分</span></div>
@@ -1396,6 +1417,7 @@ async function loadFederationConfig() {
     toggleDomainInput();
     loadNodeWeights();
     loadApprovals();
+    loadInvites();
   } catch(e) {}
 }
 
@@ -1582,6 +1604,68 @@ async function resolveApproval(requestId, approve) {
       toast('操作失败', 'error');
     }
   } catch(e) { toast('操作失败', 'error'); }
+}
+
+// Invite management
+async function createInvite() {
+  const target = document.getElementById('inviteTarget').value.trim();
+  const type = document.getElementById('inviteType').value;
+  const inviteePub = target || '*';
+  try {
+    const res = await authFetch('/api/federation/invites', {
+      method: 'POST',
+      body: JSON.stringify({
+        invitee_pub: inviteePub,
+        type: type,
+        expires_hours: 168
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      toast('邀请已创建', 'success');
+      loadInvites();
+      // Show the encoded invite code
+      const code = data.encoded;
+      if (code) {
+        const copyText = `ModelMux 联邦邀请码：\n${code}\n\n请在 ModelMux 管理页面中导入此邀请码加入网络。`;
+        alert('邀请码已生成，请复制以下内容发送给对方：\n\n' + copyText);
+      }
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast(data.error || '创建失败', 'error');
+    }
+  } catch(e) { toast('创建失败', 'error'); }
+}
+
+async function loadInvites() {
+  try {
+    const res = await authFetch('/api/federation/invites');
+    const data = await res.json();
+    const el = document.getElementById('inviteList');
+    if (!data.invites || data.invites.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-muted)">暂无邀请记录</span>';
+      return;
+    }
+    let html = '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+    html += '<tr style="border-bottom:1px solid var(--border-color)"><th style="text-align:left;padding:4px">邀请码</th><th>类型</th><th>受邀方</th><th>过期时间</th><th>操作</th></tr>';
+    for (const inv of data.invites) {
+      const typeLabel = {directed:'定向', public:'公开', chain:'链式'}[inv.type] || inv.type;
+      const expires = new Date(inv.expires_at).toLocaleString();
+      const isExpired = new Date(inv.expires_at) < new Date();
+      const status = isExpired ? '<span style="color:var(--danger)">已过期</span>' : '<span style="color:var(--success)">有效</span>';
+      html += `<tr style="border-bottom:1px solid var(--border-color)">`;
+      html += `<td style="padding:4px;font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${inv.invite_code || ''}">${(inv.invite_code || '').substring(0, 30)}...</td>`;
+      html += `<td style="text-align:center">${typeLabel}</td>`;
+      html += `<td style="text-align:center;font-size:11px">${inv.invitee_pub === '*' ? '公开' : inv.invitee_pub.substring(0, 12) + '...'}</td>`;
+      html += `<td style="text-align:center">${expires}</td>`;
+      html += `<td style="text-align:center">${status}</td>`;
+      html += `</tr>`;
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('inviteList').innerHTML = '<span style="color:var(--text-muted)">加载失败</span>';
+  }
 }
 
 // Federation doc version check
