@@ -726,6 +726,135 @@ select.form-input{appearance:none;cursor:pointer}
   </div>
 </div>
 
+
+  <!-- 共享网络 P2P -->
+  <div class="card" id="networkCard">
+    <div class="card-title"><span class="icon">🌐</span> 共享网络 <span id="networkModeLabel" class="badge badge-blue" style="font-size:11px;font-weight:normal;margin-left:8px">个人模式</span></div>
+
+    <!-- 未启用状态：介绍 + 加入按钮 -->
+    <div id="networkInactive">
+      <div class="section-note">共享网络允许您将 AI 模型能力分享给全球用户，也可以使用他人分享的模型。类似 BitTorrent 的 P2P 共享精神。</div>
+      <div style="text-align:center;padding:24px 0">
+        <div style="font-size:48px;margin-bottom:16px">🌍</div>
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px">加入共享网络</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto">将您的 AI 模型能力贡献给全球网络，同时也可以使用其他节点分享的模型能力，实现跨境 AI 能力互通。</div>
+        <button class="btn btn-primary" onclick="showNetworkDisclaimer()" style="padding:12px 32px;font-size:15px">🚀 加入共享网络</button>
+      </div>
+    </div>
+
+    <!-- 已启用状态：网络面板 -->
+    <div id="networkActive" style="display:none">
+      <!-- 网络状态 -->
+      <div class="status-grid" style="margin-bottom:16px">
+        <div class="status-item">
+          <div class="status-dot green"></div>
+          <div>
+            <div class="status-label">网络模式</div>
+            <div class="status-value" id="netMode">共享网络</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div class="status-dot" style="background:var(--accent-start)"></div>
+          <div>
+            <div class="status-label">节点名称</div>
+            <div class="status-value" id="netNodeName">-</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div class="status-dot" style="background:var(--accent-end)"></div>
+          <div>
+            <div class="status-label">节点 ID</div>
+            <div class="status-value" id="netNodeId" style="font-family:monospace;font-size:12px">-</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div class="status-dot green"></div>
+          <div>
+            <div class="status-label">运行时长</div>
+            <div class="status-value" id="netUptime">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 统计信息 -->
+      <div class="status-grid" style="margin-bottom:16px">
+        <div class="status-item">
+          <div>
+            <div class="status-label">连接节点</div>
+            <div class="status-value" id="netPeers">0</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <div class="status-label">共享模型</div>
+            <div class="status-value" id="netModels">0</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <div class="status-label">中继请求</div>
+            <div class="status-value" id="netRelayed">0</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <div class="status-label">贡献积分</div>
+            <div class="status-value" id="netPoints">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 配置区域 -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">⚙️ 节点配置</div>
+        <div class="form-group">
+          <label class="form-label">节点名称</label>
+          <input class="form-input" id="netCfgNodeName" placeholder="自定义节点名称" style="font-size:13px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">每日请求上限</label>
+          <input class="form-input" id="netCfgMaxDaily" type="number" min="1" value="1000" style="font-size:13px">
+        </div>
+        <div class="btn-group" style="margin-bottom:16px">
+          <button class="btn btn-primary btn-sm" onclick="saveNetworkConfig()">💾 保存配置</button>
+        </div>
+      </div>
+
+      <!-- 节点列表 -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">👥 已连接节点</div>
+        <div id="netPeersList" style="font-size:12px;color:var(--text-muted)">暂无连接节点</div>
+      </div>
+
+      <!-- 退出按钮 -->
+      <div style="border-top:1px solid var(--border-color);padding-top:16px;text-align:center">
+        <button class="btn btn-danger" onclick="disableNetwork()" style="padding:10px 24px">🚪 退出共享网络</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 共享网络免责声明模态框 -->
+  <div class="modal-overlay" id="networkDisclaimerModal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-title">
+        <span>🌐 共享网络使用须知</span>
+        <button class="modal-close" onclick="closeNetworkDisclaimer()">✕</button>
+      </div>
+      <div id="disclaimerContent"></div>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-color)">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="networkConsentCheck" onchange="toggleNetworkConsentBtn()" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+          <span id="networkConsentText">我已阅读并理解以上说明，自愿承担相关风险</span>
+        </label>
+      </div>
+      <div style="margin-top:16px;text-align:right">
+        <button class="btn btn-secondary" onclick="closeNetworkDisclaimer()" style="margin-right:8px">取消</button>
+        <button class="btn btn-primary" id="networkConsentBtn" onclick="confirmNetworkJoin()" disabled style="opacity:0.5">确认加入</button>
+      </div>
+    </div>
+  </div>
+
+
 <!-- 添加/编辑平台模态框 -->
 <div class="modal-overlay" id="providerModal">
   <div class="modal">
@@ -2186,6 +2315,283 @@ setInterval(() => { loadStatus(); refreshUsage(); }, 30000);
     // Load domain status on page load
     setTimeout(() => refreshDomainStatus(), 500);
     
+
+    // ============================================================
+    // Shared Network (P2P) UI
+    // ============================================================
+
+    let networkStatus = null;
+
+    async function loadNetworkStatus() {
+      try {
+        const r = await authFetch('/api/network/status');
+        networkStatus = await r.json();
+        renderNetworkUI();
+      } catch(e) {
+        console.warn('network status load failed', e);
+      }
+    }
+
+    function renderNetworkUI() {
+      if (!networkStatus) return;
+      const s = networkStatus;
+      const isShared = s.mode === 'shared';
+      const modeLabel = document.getElementById('networkModeLabel');
+      const inactive = document.getElementById('networkInactive');
+      const active = document.getElementById('networkActive');
+
+      if (isShared) {
+        modeLabel.textContent = '共享网络';
+        modeLabel.className = 'badge badge-green';
+        modeLabel.style.fontSize = '11px';
+        modeLabel.style.fontWeight = 'normal';
+        modeLabel.style.marginLeft = '8px';
+        inactive.style.display = 'none';
+        active.style.display = '';
+
+        // Fill status fields
+        setText('netNodeName', s.node_name || '-');
+        setText('netNodeId', s.node_id || '-');
+        const uptime = s.uptime_seconds || 0;
+        setText('netUptime', formatUptime(uptime));
+        setText('netPeers', (s.peers_count || 0) + ' / ' + ((s.stats && s.stats.online_peers) || 0) + ' 在线');
+        setText('netModels', (s.shared_models && s.shared_models.length) || 0);
+        setText('netRelayed', (s.stats && s.stats.requests_relayed) || 0);
+        setText('netPoints', s.contrib_points || 0);
+
+        // Config fields
+        const cfgName = document.getElementById('netCfgNodeName');
+        if (cfgName && !cfgName.value) cfgName.value = s.node_name || '';
+        const cfgMax = document.getElementById('netCfgMaxDaily');
+        if (cfgMax && cfgMax.value === '1000') cfgMax.value = s.max_daily_requests || 1000;
+
+        // Relay consumer URL
+        renderRelayInfo(s);
+
+        // Load peers
+        loadNetworkPeers();
+      } else {
+        modeLabel.textContent = '个人模式';
+        modeLabel.className = 'badge badge-blue';
+        modeLabel.style.fontSize = '11px';
+        modeLabel.style.fontWeight = 'normal';
+        modeLabel.style.marginLeft = '8px';
+        inactive.style.display = '';
+        active.style.display = 'none';
+      }
+    }
+
+    function renderRelayInfo(s) {
+      let el = document.getElementById('netRelayInfo');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'netRelayInfo';
+        el.style.cssText = 'margin-bottom:16px';
+        const cfgSection = document.getElementById('netCfgMaxDaily');
+        if (cfgSection) cfgSection.parentElement.parentElement.insertBefore(el, cfgSection.parentElement.parentElement.firstChild);
+      }
+      if (!el) return;
+
+      let html = '<div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.2);border-radius:8px;padding:12px 16px;font-size:12px">';
+      html += '<div style="font-weight:600;margin-bottom:6px">🔗 消费者访问方式</div>';
+
+      if (s.node_id) {
+        html += '<div style="margin-bottom:4px">NodeID: <code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer" onclick="copyText(\'' + s.node_id + '\')" title="点击复制">' + s.node_id + '</code></div>';
+
+        if (s.relay_consumer_url) {
+          html += '<div style="margin-bottom:4px">Relay URL: <code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer" onclick="copyText(\'' + s.relay_consumer_url + '\')" title="点击复制">' + s.relay_consumer_url + '</code></div>';
+          html += '<div style="color:var(--text-muted);font-size:11px">消费者可通过任意 relay 节点访问此 URL，格式兼容 OpenAI SDK</div>';
+        }
+
+        // Direct access
+        if (s.addresses && s.addresses.length > 0) {
+          const directAddr = s.addresses.find(a => a.startsWith('https://')) || s.addresses[0];
+          if (directAddr) {
+            html += '<div style="margin-top:6px">直连: <code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-size:11px">' + directAddr + '/v1</code></div>';
+          }
+        }
+      }
+
+      // Relay stats
+      if (s.relay_enabled && s.stats) {
+        html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color)">';
+        html += '📡 Relay 状态: <span style="color:var(--success)">● 运行中</span>';
+        html += ' | 转发: ' + (s.stats.requests_relayed || 0);
+        html += ' | 成功: ' + (s.stats.relay_success || 0);
+        html += ' | 失败: ' + (s.stats.relay_failed || 0);
+        html += ' | 路由表: ' + (s.route_table_size || 0) + ' 条';
+        html += '</div>';
+      }
+
+      html += '</div>';
+      el.innerHTML = html;
+    }
+
+    async function loadNetworkPeers() {
+      try {
+        const r = await authFetch('/api/network/peers');
+        const d = await r.json();
+        const list = document.getElementById('netPeersList');
+        if (!list) return;
+        if (!d.peers || d.peers.length === 0) {
+          list.innerHTML = '<div style="color:var(--text-muted)">暂无连接节点</div>';
+          return;
+        }
+        let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+        d.peers.forEach(p => {
+          const statusColor = p.status === 'online' ? 'var(--success)' : p.status === 'degraded' ? 'var(--warning)' : 'var(--error)';
+          html += '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">';
+          html += '<div>';
+          html += '<div style="font-weight:500;font-size:13px">' + (p.name || p.node_id) + '</div>';
+          html += '<div style="font-size:11px;color:var(--text-muted);font-family:monospace">' + p.node_id + '</div>';
+          if (p.models && p.models.length > 0) {
+            html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + p.models.slice(0,3).join(', ') + (p.models.length > 3 ? '...' : '') + '</div>';
+          }
+          html += '</div>';
+          html += '<div style="display:flex;align-items:center;gap:8px">';
+          html += '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + '"></span>';
+          html += '<button class="btn btn-danger btn-sm" onclick="removeNetworkPeer(\'' + p.node_id + '\')" style="padding:3px 8px;font-size:10px">移除</button>';
+          html += '</div></div>';
+        });
+        html += '</div>';
+        list.innerHTML = html;
+      } catch(e) { console.warn('load peers failed', e); }
+    }
+
+    // Disclaimer modal
+    async function showNetworkDisclaimer() {
+      const modal = document.getElementById('networkDisclaimerModal');
+      modal.classList.add('open');
+      // Load disclaimer
+      try {
+        const r = await fetch('/api/network/disclaimer');
+        const d = await r.json();
+        renderDisclaimer(d);
+      } catch(e) {
+        toast('加载免责声明失败', 'error');
+      }
+    }
+
+    function renderDisclaimer(d) {
+      const el = document.getElementById('disclaimerContent');
+      let html = '';
+      d.sections.forEach(s => {
+        const isRisk = s.is_risk === true;
+        html += '<div style="margin-bottom:16px;padding:14px;border-radius:8px;';
+        if (isRisk) {
+          html += 'background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3)';
+        } else {
+          html += 'background:var(--bg-secondary);border:1px solid var(--border-color)';
+        }
+        html += '">';
+        html += '<div style="font-weight:600;font-size:14px;margin-bottom:8px;';
+        if (isRisk) html += 'color:var(--error)';
+        html += '">' + s.heading + '</div>';
+        html += '<div style="font-size:13px;line-height:1.7;white-space:pre-line;';
+        if (isRisk) html += 'color:#ff6b6b;font-weight:700';
+        else html += 'color:var(--text-secondary)';
+        html += '">' + s.content + '</div>';
+        html += '</div>';
+      });
+      el.innerHTML = html;
+      // Set confirmation text
+      const ct = document.getElementById('networkConsentText');
+      if (ct && d.confirmation_text) ct.textContent = d.confirmation_text;
+    }
+
+    function closeNetworkDisclaimer() {
+      document.getElementById('networkDisclaimerModal').classList.remove('open');
+      document.getElementById('networkConsentCheck').checked = false;
+      toggleNetworkConsentBtn();
+    }
+
+    function toggleNetworkConsentBtn() {
+      const checked = document.getElementById('networkConsentCheck').checked;
+      const btn = document.getElementById('networkConsentBtn');
+      btn.disabled = !checked;
+      btn.style.opacity = checked ? '1' : '0.5';
+    }
+
+    async function confirmNetworkJoin() {
+      try {
+        // Step 1: Record consent
+        const r1 = await authFetch('/api/network/consent', {method:'POST', body:JSON.stringify({accepted:true})});
+        if (!r1.ok) { toast('同意记录失败', 'error'); return; }
+
+        // Step 2: Enable shared network
+        const r2 = await authFetch('/api/network/enable', {method:'POST'});
+        const d = await r2.json();
+        if (!r2.ok) { toast(d.error || '启用失败', 'error'); return; }
+
+        closeNetworkDisclaimer();
+        toast('🎉 已加入共享网络！NodeID: ' + (d.node_id || ''), 'success');
+        await loadNetworkStatus();
+      } catch(e) {
+        toast('加入失败: ' + e.message, 'error');
+      }
+    }
+
+    async function disableNetwork() {
+      if (!confirm('确定要退出共享网络吗？所有连接节点将被清除，回到个人模式。')) return;
+      try {
+        const r = await authFetch('/api/network/disable', {method:'POST'});
+        if (!r.ok) { toast('退出失败', 'error'); return; }
+        toast('已退出共享网络，回到个人模式', 'success');
+        await loadNetworkStatus();
+      } catch(e) {
+        toast('退出失败: ' + e.message, 'error');
+      }
+    }
+
+    async function saveNetworkConfig() {
+      const nodeName = document.getElementById('netCfgNodeName').value.trim();
+      const maxDaily = parseInt(document.getElementById('netCfgMaxDaily').value) || 1000;
+      try {
+        const r = await authFetch('/api/network/config', {
+          method: 'PUT',
+          body: JSON.stringify({node_name: nodeName, max_daily_requests: maxDaily})
+        });
+        if (!r.ok) { toast('保存失败', 'error'); return; }
+        toast('配置已保存', 'success');
+        await loadNetworkStatus();
+      } catch(e) {
+        toast('保存失败: ' + e.message, 'error');
+      }
+    }
+
+    async function removeNetworkPeer(nodeId) {
+      if (!confirm('确定移除此节点？')) return;
+      try {
+        const r = await authFetch('/api/network/peers/' + encodeURIComponent(nodeId), {method:'DELETE'});
+        if (!r.ok) { toast('移除失败', 'error'); return; }
+        toast('节点已移除', 'success');
+        await loadNetworkStatus();
+      } catch(e) {
+        toast('移除失败: ' + e.message, 'error');
+      }
+    }
+
+    function formatUptime(seconds) {
+      if (seconds < 60) return seconds + '秒';
+      if (seconds < 3600) return Math.floor(seconds/60) + '分' + (seconds%60) + '秒';
+      const h = Math.floor(seconds/3600);
+      const m = Math.floor((seconds%3600)/60);
+      if (h < 24) return h + '时' + m + '分';
+      const d = Math.floor(h/24);
+      return d + '天' + (h%24) + '时';
+    }
+
+    function setText(id, val) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    }
+
+    // Load network status on page load
+    setTimeout(() => loadNetworkStatus(), 300);
+    // Refresh every 30 seconds
+    setInterval(() => loadNetworkStatus(), 30000);
+
+
 </script>
 </body>
 </html>

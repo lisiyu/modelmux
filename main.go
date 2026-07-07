@@ -52,6 +52,10 @@ func main() {
 	// Initialize rate limiter
 	initRateLimiter()
 
+	// Initialize P2P shared network manager (Phase 1)
+	initNetworkManager("data")
+	netMgr.Init()
+
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
 	pm.save()
@@ -197,6 +201,29 @@ func main() {
 	mux.HandleFunc("POST /api/federation/invites", withAuth(handleCreateInvite))
 	mux.HandleFunc("GET /api/federation/invites", withAuth(handleListInvites))
 	mux.HandleFunc("POST /api/federation/invites/verify", handleVerifyInvite)
+
+	// P2P Shared Network API (Phase 1) — decentralized relay
+	mux.HandleFunc("GET /api/network/status", handleNetworkStatus)
+	mux.HandleFunc("POST /api/network/consent", handleNetworkConsent)
+	mux.HandleFunc("GET /api/network/disclaimer", handleNetworkDisclaimer)
+	mux.HandleFunc("POST /api/network/enable", withAuth(handleNetworkEnable))
+	mux.HandleFunc("POST /api/network/disable", withAuth(handleNetworkDisable))
+	mux.HandleFunc("PUT /api/network/config", withAuth(handleNetworkConfigUpdate))
+	mux.HandleFunc("GET /api/network/peers", withAuth(handleNetworkPeers))
+	mux.HandleFunc("POST /api/network/peers", withAuth(handleNetworkAddPeer))
+	mux.HandleFunc("DELETE /api/network/peers/{id}", withAuth(handleNetworkRemovePeer))
+	mux.HandleFunc("GET /api/network/resolve/{id}", handleNetworkResolve)
+	mux.HandleFunc("GET /api/network/routes", withAuth(handleNetworkRoutes))
+
+	// P2P Relay: /network/{node_id}/{rest...} — any shared node can relay
+	// Register per-method to avoid conflict with GET / admin page handler
+	// Consumers use OpenAI SDK (POST /v1/chat/completions, GET /v1/models)
+	mux.HandleFunc("GET /network/{id}/", handleNetworkRelay)
+	mux.HandleFunc("POST /network/{id}/", handleNetworkRelay)
+	mux.HandleFunc("PUT /network/{id}/", handleNetworkRelay)
+	mux.HandleFunc("DELETE /network/{id}/", handleNetworkRelay)
+	mux.HandleFunc("GET /network/{id}", handleNetworkRelay)
+	mux.HandleFunc("POST /network/{id}", handleNetworkRelay)
 
 	// CORS + request logging middleware
 	handler := corsMiddleware(requestLogMiddleware(mux))
@@ -469,6 +496,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		status["federation"] = map[string]any{"enabled": false}
+	}
+	// P2P shared network status (Phase 1)
+	if netMgr != nil {
+		s := netMgr.GetStatus()
+		status["network"] = map[string]any{
+			"mode":    s["mode"],
+			"node_id": s["node_id"],
+		}
+	} else {
+		status["network"] = map[string]any{"mode": "personal"}
 	}
 	writeJSON(w, 200, status)
 }
