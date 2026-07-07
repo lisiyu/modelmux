@@ -20,6 +20,20 @@
 
 ## 快速开始
 
+### 一键安装（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash
+```
+
+自定义端口和目录：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash -s -- --port 9090 --dir /opt/modelmux
+```
+
+脚本会自动克隆仓库、构建镜像、启动容器。后续更新也是同一行命令。
+
 ### 编译运行
 
 ```bash
@@ -33,7 +47,7 @@ make run
 go run .
 ```
 
-### Docker
+### Docker 手动部署
 
 ```bash
 docker build -t modelmux .
