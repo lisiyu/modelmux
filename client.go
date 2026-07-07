@@ -135,7 +135,9 @@ func openaiStream(p Provider, model string, messages []ChatMessage, extra map[st
 	req, _ := http.NewRequest("POST", p.BaseURL+"/chat/completions", jsonBody(body))
 	setOpenAIHeaders(req, p.APIKey)
 
-	resp, err := proxyHTTPClient(p, 300 * time.Second).Do(req)
+	// Use a long overall timeout but with idle detection via pipe
+	client := proxyHTTPClient(p, 300*time.Second)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -149,19 +151,36 @@ func openaiStream(p Provider, model string, messages []ChatMessage, extra map[st
 	// Pipe SSE directly - upstream is already in OpenAI SSE format
 	flusher, ok := w.(interface{ Flush() })
 	if !ok {
-		// Just copy directly
 		_, err = io.Copy(w, resp.Body)
 		return err
 	}
 
+	// Stream with idle timeout: if no data received for 90 seconds, abort
+	const streamIdleTimeout = 90 * time.Second
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		fmt.Fprint(w, line+"\n")
-		flusher.Flush()
+
+	done := make(chan error, 1)
+	go func() {
+		for scanner.Scan() {
+			line := scanner.Text()
+			fmt.Fprint(w, line+"\n")
+			flusher.Flush()
+		}
+		done <- scanner.Err()
+	}()
+
+	// Watchdog: detect if stream stalls
+	idleTimer := time.NewTimer(streamIdleTimeout)
+	defer idleTimer.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-idleTimer.C:
+			return fmt.Errorf("stream idle timeout: no data received for %v", streamIdleTimeout)
+		}
 	}
-	return scanner.Err()
 }
 
 func buildOpenAIBody(model string, messages []ChatMessage, stream bool, extra map[string]any) map[string]any {

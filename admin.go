@@ -266,7 +266,8 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func handleListProviders(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"providers": pm.GetAll()})
+	owner := getRequestOwner(r)
+	writeJSON(w, 200, map[string]any{"providers": pm.GetVisible(owner)})
 }
 
 func handleGetPresets(w http.ResponseWriter, r *http.Request) {
@@ -291,13 +292,17 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "provider ID required")
 		return
 	}
+
+	// Set owner based on authenticated user
+	owner := getRequestOwner(r)
+	p.Owner = owner // "" for admin, consumer_id for consumers
+
 	// Validate VMess proxy link
 	if strings.HasPrefix(p.Proxy, "vmess://") {
 		if _, err := ParseVMessLink(p.Proxy); err != nil {
 			writeError(w, 400, "Invalid VMess link: "+err.Error())
 			return
 		}
-		// Start the proxy (keep original link in provider)
 		if _, err := ResolveProxy(p.ID, p.Proxy); err != nil {
 			slog.Warn("failed to start VMess proxy", "provider", p.ID, "error", err)
 			writeError(w, 400, "VMess proxy failed: "+err.Error())
@@ -308,19 +313,37 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
+// checkProviderAccess verifies the caller can access a provider.
+// Returns the raw provider and true if access is allowed.
+func checkProviderAccess(r *http.Request, id string) (Provider, bool) {
+	p, ok := pm.GetRaw(id)
+	if !ok {
+		return Provider{}, false
+	}
+	owner := getRequestOwner(r)
+	if owner == "" {
+		return p, true // admin has access to all
+	}
+	// Consumer can only access their own providers or system presets
+	if p.Owner != "" && p.Owner != owner {
+		return Provider{}, false
+	}
+	return p, true
+}
+
 func handleGetProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, ok := pm.Get(id)
+	p, ok := checkProviderAccess(r, id)
 	if !ok {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
-	writeJSON(w, 200, p)
+	writeJSON(w, 200, p.Safe())
 }
 
 func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	existing, ok := pm.GetRaw(id)
+	existing, ok := checkProviderAccess(r, id)
 	if !ok {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
@@ -334,31 +357,34 @@ func handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	b2, _ := json.Marshal(updates)
 	json.Unmarshal(b2, &merged)
 	merged.ID = id
+	// Preserve ownership — consumer cannot change owner
+	merged.Owner = existing.Owner
 
 	// Validate VMess proxy link if changed
 	if merged.Proxy != "" && merged.Proxy != existing.Proxy {
 		if strings.HasPrefix(merged.Proxy, "vmess://") {
-			// Validate the link by parsing it
 			if _, err := ParseVMessLink(merged.Proxy); err != nil {
 				writeError(w, 400, "Invalid VMess link: "+err.Error())
 				return
 			}
-			// Try to start the proxy
 			if _, err := ResolveProxy(id, merged.Proxy); err != nil {
 				slog.Warn("failed to start VMess proxy", "provider", id, "error", err)
 				writeError(w, 400, "VMess proxy failed: "+err.Error())
 				return
 			}
-			// Keep the original vmess:// link (proxyHTTPClient resolves on-the-fly)
 		}
 	}
-	
+
 	result := pm.Add(merged)
 	writeJSON(w, 200, map[string]any{"success": true, "data": result})
 }
 
 func handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if _, ok := checkProviderAccess(r, id); !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
 	if !pm.Delete(id) {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
@@ -548,12 +574,21 @@ func handleSaveSMTPConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================
-// Logs
+// Request Logs & Health
 // ============================================================
 
-func handleLogs(w http.ResponseWriter, r *http.Request) {
-	// Return empty for now - would need a log buffer like Python version
-	writeJSON(w, 200, map[string]any{"logs": []string{}})
+func handleRequestLogs(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	logs := tracker.GetRequestLog(limit)
+	writeJSON(w, 200, map[string]any{"logs": logs, "count": len(logs)})
+}
+
+func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
+	health := healthChecker.GetHealth()
+	writeJSON(w, 200, map[string]any{"providers": health})
 }
 
 // ============================================================

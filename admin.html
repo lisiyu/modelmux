@@ -111,7 +111,7 @@ select.form-input{appearance:none;cursor:pointer}
 <div class="container">
   <div class="header">
     <div class="logo">Multi-Provider Proxy</div>
-    <div class="logo-sub">v3.0 · 多平台 AI 模型统一管理</div>
+    <div class="logo-sub">v2.0 · 多平台 AI 模型统一管理</div>
     <div class="header-actions">
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
@@ -178,6 +178,9 @@ select.form-input{appearance:none;cursor:pointer}
         <span>⚡ 速度</span>
         <input type="range" id="wLatency" min="0" max="100" value="20" oninput="updateWeightLabel()" style="width:100%">
         <span id="wLatencyVal" style="text-align:right;font-variant-numeric:tabular-nums">20%</span>
+        <span>🪙 剩余Token</span>
+        <input type="range" id="wToken" min="0" max="100" value="15" oninput="updateWeightLabel()" style="width:100%">
+        <span id="wTokenVal" style="text-align:right;font-variant-numeric:tabular-nums">15%</span>
       </div>
       <div style="margin-top:8px;text-align:right">
         <button class="btn btn-sm btn-primary" onclick="saveWeights()" style="font-size:11px;padding:4px 12px">保存权重</button>
@@ -202,6 +205,28 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
     <div class="btn-group" style="margin-top:12px">
       <button class="btn btn-danger btn-sm" onclick="resetUsage()">🗑 清空记录</button>
+    </div>
+  </div>
+
+  <!-- 请求日志 -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">📋</span> 请求日志</span>
+      <button class="btn btn-secondary btn-sm" onclick="refreshLogs()">🔄 刷新</button>
+    </div>
+    <div id="logList" style="font-size:12px;max-height:400px;overflow-y:auto">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
+    </div>
+  </div>
+
+  <!-- Provider 健康状态 -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span><span class="icon">🏥</span> Provider 健康状态</span>
+      <button class="btn btn-secondary btn-sm" onclick="refreshHealth()">🔄 刷新</button>
+    </div>
+    <div id="healthList" style="font-size:12px">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
     </div>
   </div>
 
@@ -234,6 +259,33 @@ select.form-input{appearance:none;cursor:pointer}
     <div class="btn-group">
       <button class="btn btn-primary" onclick="saveSmtp()">保存配置</button>
       <button class="btn btn-secondary" onclick="testSmtp()">发送测试邮件</button>
+    </div>
+  </div>
+
+  <!-- 多用户管理 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">👥</span> 多用户管理</div>
+    
+    <!-- 邀请码 -->
+    <div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:14px;font-weight:500">邀请码</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="inviteMaxUses" type="number" value="5" min="1" style="width:80px;padding:6px 10px;font-size:12px" placeholder="次数">
+          <button class="btn btn-primary btn-sm" onclick="createInviteCode()">+ 创建邀请码</button>
+        </div>
+      </div>
+      <div id="inviteCodeList" style="font-size:12px">
+        <div style="text-align:center;color:var(--text-muted);padding:10px">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 消费者列表 -->
+    <div style="border-top:1px solid var(--border-color);padding-top:16px">
+      <div style="font-size:14px;font-weight:500;margin-bottom:10px">已注册用户</div>
+      <div id="consumerList" style="font-size:12px">
+        <div style="text-align:center;color:var(--text-muted);padding:10px">加载中...</div>
+      </div>
     </div>
   </div>
 
@@ -288,6 +340,7 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div class="form-group"><label class="form-label">描述</label><input class="form-input" id="pDesc" placeholder="平台描述"></div>
       <div class="form-group"><label class="form-label">优先级（数字越小越优先）</label><input class="form-input" id="pPriority" type="number" value="5"></div>
+      <div class="form-group"><label class="form-label">Token 预算上限（可选）</label><input class="form-input" id="pTokenLimit" type="number" placeholder="留空表示不限制，单位：Token/月"></div>
       <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pEnabled" checked> 启用此平台</label></div>
       <div class="btn-group">
         <button class="btn btn-primary" onclick="saveProvider()">💾 保存</button>
@@ -315,7 +368,7 @@ if (!authToken) { location.href = '/login'; }
 
 let presets = [];
 async function init() {
-  try { await loadStatus(); await loadProviders(); } catch(e) { console.error(e); }
+  try { await loadStatus(); await loadProviders(); await refreshInviteCodes(); await refreshConsumers(); } catch(e) { console.error(e); }
   // Load presets in background
   try { const r = await fetch('/api/providers/presets'); const d = await r.json(); presets = d.presets || []; } catch(e) {}
 }
@@ -443,17 +496,20 @@ function updateWeightLabel() {
   const p = parseInt(document.getElementById('wPriority').value);
   const c = parseInt(document.getElementById('wCost').value);
   const l = parseInt(document.getElementById('wLatency').value);
-  const total = p + c + l || 1;
+  const t = parseInt(document.getElementById('wToken').value);
+  const total = p + c + l + t || 1;
   document.getElementById('wPriorityVal').textContent = Math.round(p / total * 100) + '%';
   document.getElementById('wCostVal').textContent = Math.round(c / total * 100) + '%';
   document.getElementById('wLatencyVal').textContent = Math.round(l / total * 100) + '%';
+  document.getElementById('wTokenVal').textContent = Math.round(t / total * 100) + '%';
 }
 
 async function saveWeights() {
   const p = parseInt(document.getElementById('wPriority').value);
   const c = parseInt(document.getElementById('wCost').value);
   const l = parseInt(document.getElementById('wLatency').value);
-  const total = p + c + l || 1;
+  const t = parseInt(document.getElementById('wToken').value);
+  const total = p + c + l + t || 1;
   try {
     const r = await authFetch('/api/routing/weights', {
       method: 'POST',
@@ -461,6 +517,7 @@ async function saveWeights() {
         priority: +(p / total).toFixed(2),
         cost: +(c / total).toFixed(2),
         latency: +(l / total).toFixed(2),
+        token: +(t / total).toFixed(2),
       }),
     });
     const d = await r.json();
@@ -477,6 +534,7 @@ async function loadWeights() {
     document.getElementById('wPriority').value = Math.round((w.priority || 0.5) * 100);
     document.getElementById('wCost').value = Math.round((w.cost || 0.3) * 100);
     document.getElementById('wLatency').value = Math.round((w.latency || 0.2) * 100);
+    document.getElementById('wToken').value = Math.round((w.token || 0.15) * 100);
     updateWeightLabel();
   } catch (e) { /* ignore */ }
 }
@@ -710,6 +768,7 @@ function editProvider(pid) {
   document.getElementById('pProxy').placeholder = p.proxy && !p.proxy.startsWith('vmess://') ? `当前代理: ${p.proxy}（输入新值覆盖）` : 'vmess://... 或 socks5://127.0.0.1:1080';
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.priority || 5;
+  document.getElementById('pTokenLimit').value = p.token_limit || '';
   document.getElementById('pEnabled').checked = p.enabled !== false;
   document.getElementById('providerModal').classList.add('open');
 }
@@ -748,6 +807,8 @@ async function saveProvider() {
     priority: parseInt(document.getElementById('pPriority').value) || 5,
     enabled: document.getElementById('pEnabled').checked,
   };
+  const tokenLimit = document.getElementById('pTokenLimit').value.trim();
+  if (tokenLimit) data.token_limit = parseInt(tokenLimit);
   const key = document.getElementById('pKey').value.trim();
   if (key) data.api_key = key;
   const proxy = document.getElementById('pProxy').value.trim();
@@ -903,8 +964,122 @@ async function importConfig(input) {
   input.value = '';
 }
 
+// ===== Request Logs =====
+async function refreshLogs() {
+  try {
+    const r = await authFetch('/api/logs');
+    const d = await r.json();
+    const logs = d.logs || [];
+    const container = document.getElementById('logList');
+    if (!logs.length) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无请求日志</div>';
+      return;
+    }
+    let html = '<table class="usage-table"><thead><tr><th>时间</th><th>模型</th><th>平台</th><th>Token</th><th>延迟</th><th>状态</th></tr></thead><tbody>';
+    for (const l of logs) {
+      const statusBadge = l.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-red">失败</span>';
+      const time = l.timestamp ? new Date(l.timestamp).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
+      html += `<tr><td>${time}</td><td>${l.model||'-'}</td><td>${l.provider||'-'}</td><td>${l.tokens||0}</td><td>${l.latency_ms||0}ms</td><td>${statusBadge}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+// ===== Health Status =====
+async function refreshHealth() {
+  try {
+    const r = await authFetch('/api/health');
+    const d = await r.json();
+    const health = d.health || {};
+    const container = document.getElementById('healthList');
+    const keys = Object.keys(health);
+    if (!keys.length) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无健康检测数据</div>';
+      return;
+    }
+    let html = '<table class="usage-table"><thead><tr><th>平台</th><th>状态</th><th>延迟</th><th>上次检查</th><th>连续失败</th></tr></thead><tbody>';
+    for (const [k, v] of Object.entries(health)) {
+      const dot = v.healthy ? '<span class="status-dot green" style="width:8px;height:8px;display:inline-block"></span>' : '<span class="status-dot red" style="width:8px;height:8px;display:inline-block"></span>';
+      const checkTime = v.last_check ? new Date(v.last_check).toLocaleString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
+      html += `<tr><td>${dot} ${k}</td><td>${v.healthy?'正常':'异常'}</td><td>${v.latency_ms||0}ms</td><td>${checkTime}</td><td>${v.consecutive_failures||0}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+// ===== Invite Codes & Consumers =====
+async function refreshInviteCodes() {
+  try {
+    const r = await authFetch('/api/invite-codes');
+    const d = await r.json();
+    const codes = d.codes || [];
+    const container = document.getElementById('inviteCodeList');
+    if (!codes.length) { container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:10px">暂无邀请码</div>'; return; }
+    let html = '<table class="usage-table"><thead><tr><th>邀请码</th><th>已用/上限</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
+    for (const c of codes) {
+      const time = c.created_at ? new Date(c.created_at).toLocaleDateString('zh-CN') : '-';
+      html += `<tr><td style="font-family:monospace">${c.code}</td><td>${c.used_count||0}/${c.max_uses||'∞'}</td><td>${time}</td><td><button class="btn btn-danger btn-sm" onclick="deleteInviteCode('${c.code}')" style="font-size:11px;padding:2px 8px">删除</button></td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function createInviteCode() {
+  const maxUses = parseInt(document.getElementById('inviteMaxUses').value) || 5;
+  try {
+    const r = await authFetch('/api/invite-codes', { method: 'POST', body: JSON.stringify({ max_uses: maxUses }) });
+    const d = await r.json();
+    if (d.code) { toast('✅ 邀请码已创建: ' + d.code); refreshInviteCodes(); }
+    else toast('创建失败', 'error');
+  } catch(e) { toast('创建失败: '+e.message, 'error'); }
+}
+
+async function deleteInviteCode(code) {
+  if (!confirm('确定删除此邀请码？')) return;
+  try {
+    await authFetch('/api/invite-codes/' + encodeURIComponent(code), { method: 'DELETE' });
+    toast('已删除'); refreshInviteCodes();
+  } catch(e) { toast('删除失败', 'error'); }
+}
+
+async function refreshConsumers() {
+  try {
+    const r = await authFetch('/api/consumers');
+    const d = await r.json();
+    const consumers = d.consumers || [];
+    const container = document.getElementById('consumerList');
+    if (!consumers.length) { container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:10px">暂无注册用户</div>'; return; }
+    let html = '<table class="usage-table"><thead><tr><th>ID</th><th>状态</th><th>总用量</th><th>注册时间</th><th>操作</th></tr></thead><tbody>';
+    for (const c of consumers) {
+      const status = c.disabled ? '<span class="badge badge-red">已禁用</span>' : '<span class="badge badge-green">正常</span>';
+      const time = c.created_at ? new Date(c.created_at).toLocaleDateString('zh-CN') : '-';
+      html += `<tr><td style="font-family:monospace;font-size:11px">${c.id}</td><td>${status}</td><td>${c.total_tokens||0}</td><td>${time}</td><td><button class="btn btn-sm ${c.disabled?'btn-success':'btn-danger'}" onclick="toggleConsumer('${c.id}',${!c.disabled})" style="font-size:11px;padding:2px 8px">${c.disabled?'启用':'禁用'}</button> <button class="btn btn-danger btn-sm" onclick="deleteConsumer('${c.id}')" style="font-size:11px;padding:2px 8px">删除</button></td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function toggleConsumer(id, disabled) {
+  try {
+    await authFetch('/api/consumers/' + id, { method: 'PUT', body: JSON.stringify({ disabled: disabled }) });
+    toast(disabled ? '已禁用' : '已启用'); refreshConsumers();
+  } catch(e) { toast('操作失败', 'error'); }
+}
+
+async function deleteConsumer(id) {
+  if (!confirm('确定删除此用户？其所有 Provider 也将被删除。')) return;
+  try {
+    await authFetch('/api/consumers/' + id, { method: 'DELETE' });
+    toast('已删除'); refreshConsumers();
+  } catch(e) { toast('删除失败', 'error'); }
+}
+
 // ===== Start =====
-init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); });
+init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); });
 
 // Auto-refresh status and usage every 30 seconds
 setInterval(() => { loadStatus(); refreshUsage(); }, 30000);

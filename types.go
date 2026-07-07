@@ -133,7 +133,8 @@ type Provider struct {
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
 	APIKeyURL   string     `json:"api_key_url,omitempty"`
-	Proxy       string     `json:"proxy,omitempty"`          // http://, socks5://, or vmess:// link
+	Proxy       string     `json:"proxy,omitempty"` // http://, socks5://, or vmess:// link
+	Owner       string     `json:"owner,omitempty"` // consumer ID; empty = admin/system
 	CreatedAt   string     `json:"created_at,omitempty"`
 	UpdatedAt   string     `json:"updated_at,omitempty"`
 }
@@ -215,6 +216,65 @@ type AdminStore struct {
 	SMTP      SMTPConfig `json:"smtp"`
 	Reset     *ResetToken `json:"reset_token,omitempty"`
 	Initialized bool     `json:"initialized"`
+}
+
+// ============================================================
+// Request log (in-memory ring buffer)
+// ============================================================
+
+type RequestLogEntry struct {
+	Timestamp    string  `json:"timestamp"`
+	Method       string  `json:"method"`
+	Model        string  `json:"model"`
+	ProviderID   string  `json:"provider_id"`
+	ProviderName string  `json:"provider_name"`
+	Success      bool    `json:"success"`
+	LatencyMS    float64 `json:"latency_ms"`
+	Tokens       int     `json:"tokens"`
+	CostUSD      float64 `json:"cost_usd"`
+	Error        string  `json:"error,omitempty"`
+	Stream       bool    `json:"stream"`
+	RetryCount   int     `json:"retry_count"`
+}
+
+// ============================================================
+// Provider health status
+// ============================================================
+
+type ProviderHealth struct {
+	ProviderID       string  `json:"provider_id"`
+	ProviderName     string  `json:"provider_name"`
+	Status           string  `json:"status"` // "healthy", "degraded", "down", "unknown"
+	LastCheck        string  `json:"last_check"`
+	LatencyMS        float64 `json:"latency_ms"`
+	ConsecutiveFails int     `json:"consecutive_fails"`
+	LastSuccess      string  `json:"last_success"`
+	LastFailure      string  `json:"last_failure"`
+	FailureReason    string  `json:"failure_reason,omitempty"`
+}
+
+// ============================================================
+// Multi-user: invite codes & consumers
+// ============================================================
+
+type InviteCode struct {
+	Code      string `json:"code"`
+	CreatedAt string `json:"created_at"`
+	UsedBy    string `json:"used_by,omitempty"`
+	UsedAt    string `json:"used_at,omitempty"`
+	MaxUses   int    `json:"max_uses"` // 0 = single use
+	UseCount  int    `json:"use_count"`
+}
+
+type Consumer struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	APIKey       string `json:"api_key"`
+	InviteCode   string `json:"invite_code"`
+	CreatedAt    string `json:"created_at"`
+	TotalTokens  int64  `json:"total_tokens"`
+	TotalRequests int   `json:"total_requests"`
+	Enabled      bool   `json:"enabled"`
 }
 
 // ============================================================

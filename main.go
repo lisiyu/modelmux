@@ -23,6 +23,7 @@ func main() {
 	initSiderMonitor("data/sider_token_status.json")
 	initAuth("data/admin.json")
 	initVMessManager("data")
+	initMultiUser("data")
 
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
@@ -41,15 +42,18 @@ func main() {
 		}
 	}
 
+	// Start health checker (every 5 minutes)
+	initHealthChecker(5 * time.Minute)
+
 	// Setup HTTP mux
 	mux := http.NewServeMux()
 
 	// Health
 	mux.HandleFunc("GET /health", handleHealth)
 
-	// OpenAI-compatible endpoints
-	mux.HandleFunc("GET /v1/models", withOptionalAPIKey(handleListModels))
-	mux.HandleFunc("POST /v1/chat/completions", withOptionalAPIKey(handleChatCompletions))
+	// OpenAI-compatible endpoints (supports admin proxy key + consumer keys)
+	mux.HandleFunc("GET /v1/models", withProxyAuth(handleListModels))
+	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(handleChatCompletions))
 
 	// Auth (public)
 	mux.HandleFunc("GET /api/setup/status", handleSetupStatus)
@@ -71,32 +75,32 @@ func main() {
 	mux.HandleFunc("POST /api/admin/change-password", withAuth(handleChangePassword))
 	mux.HandleFunc("POST /api/admin/update-email", withAuth(handleUpdateEmail))
 
-	// Provider management (protected)
-	mux.HandleFunc("GET /api/providers", withAuth(handleListProviders))
+	// Provider management (admin + consumer)
+	mux.HandleFunc("GET /api/providers", withConsumerOrAdminAuth(handleListProviders))
 	mux.HandleFunc("GET /api/providers/presets", handleGetPresets)
-	mux.HandleFunc("POST /api/providers", withAuth(handleCreateProvider))
-	mux.HandleFunc("GET /api/providers/{id}", withAuth(handleGetProvider))
-	mux.HandleFunc("PUT /api/providers/{id}", withAuth(handleUpdateProvider))
-	mux.HandleFunc("DELETE /api/providers/{id}", withAuth(handleDeleteProvider))
-	mux.HandleFunc("POST /api/providers/{id}/test", withAuth(handleTestProvider))
-	mux.HandleFunc("GET /api/providers/{id}/models", withAuth(handleGetProviderModels))
-	mux.HandleFunc("POST /api/providers/{id}/sync-url", withAuth(handleSyncProviderURL))
-	mux.HandleFunc("POST /api/providers/sync-all-urls", withAuth(handleSyncAllURLs))
+	mux.HandleFunc("POST /api/providers", withConsumerOrAdminAuth(handleCreateProvider))
+	mux.HandleFunc("GET /api/providers/{id}", withConsumerOrAdminAuth(handleGetProvider))
+	mux.HandleFunc("PUT /api/providers/{id}", withConsumerOrAdminAuth(handleUpdateProvider))
+	mux.HandleFunc("DELETE /api/providers/{id}", withConsumerOrAdminAuth(handleDeleteProvider))
+	mux.HandleFunc("POST /api/providers/{id}/test", withConsumerOrAdminAuth(handleTestProvider))
+	mux.HandleFunc("GET /api/providers/{id}/models", withConsumerOrAdminAuth(handleGetProviderModels))
+	mux.HandleFunc("POST /api/providers/{id}/sync-url", withConsumerOrAdminAuth(handleSyncProviderURL))
+	mux.HandleFunc("POST /api/providers/sync-all-urls", withConsumerOrAdminAuth(handleSyncAllURLs))
 
 	// Sider status
-	mux.HandleFunc("GET /api/providers/sider/status", withAuth(handleSiderStatus))
-	mux.HandleFunc("POST /api/providers/sider/test", withAuth(handleSiderTest))
+	mux.HandleFunc("GET /api/providers/sider/status", withConsumerOrAdminAuth(handleSiderStatus))
+	mux.HandleFunc("POST /api/providers/sider/test", withConsumerOrAdminAuth(handleSiderTest))
 
-	// Usage & routing (protected)
-	mux.HandleFunc("GET /api/usage/summary", withAuth(handleUsageSummary))
-	mux.HandleFunc("GET /api/usage/providers", withAuth(handleUsageProviders))
-	mux.HandleFunc("GET /api/usage/records", withAuth(handleUsageRecords))
-	mux.HandleFunc("DELETE /api/usage/reset", withAuth(handleUsageReset))
-	mux.HandleFunc("GET /api/routing/mode", withAuth(handleGetRoutingMode))
-	mux.HandleFunc("POST /api/routing/mode", withAuth(handleSetRoutingMode))
-	mux.HandleFunc("GET /api/routing/weights", withAuth(handleGetRoutingWeights))
-	mux.HandleFunc("POST /api/routing/weights", withAuth(handleSetRoutingWeights))
-	mux.HandleFunc("GET /api/routing/advice/{model}", withAuth(handleRoutingAdvice))
+	// Usage & routing (admin + consumer)
+	mux.HandleFunc("GET /api/usage/summary", withConsumerOrAdminAuth(handleUsageSummary))
+	mux.HandleFunc("GET /api/usage/providers", withConsumerOrAdminAuth(handleUsageProviders))
+	mux.HandleFunc("GET /api/usage/records", withConsumerOrAdminAuth(handleUsageRecords))
+	mux.HandleFunc("DELETE /api/usage/reset", withAuth(handleUsageReset)) // admin only
+	mux.HandleFunc("GET /api/routing/mode", withConsumerOrAdminAuth(handleGetRoutingMode))
+	mux.HandleFunc("POST /api/routing/mode", withAuth(handleSetRoutingMode)) // admin only
+	mux.HandleFunc("GET /api/routing/weights", withConsumerOrAdminAuth(handleGetRoutingWeights))
+	mux.HandleFunc("POST /api/routing/weights", withAuth(handleSetRoutingWeights)) // admin only
+	mux.HandleFunc("GET /api/routing/advice/{model}", withConsumerOrAdminAuth(handleRoutingAdvice))
 
 	// SMTP (protected)
 	mux.HandleFunc("GET /api/smtp/status", handleSMTPStatus)
@@ -104,8 +108,19 @@ func main() {
 	mux.HandleFunc("POST /api/smtp/config", withAuth(handleSaveSMTPConfig))
 	mux.HandleFunc("POST /api/smtp/test", withAuth(handleSMTPTest))
 
-	// Logs (protected)
-	mux.HandleFunc("GET /api/logs", withAuth(handleLogs))
+	// Request logs & health (protected)
+	mux.HandleFunc("GET /api/logs", withAuth(handleRequestLogs))
+	mux.HandleFunc("GET /api/health", withAuth(handleHealthStatus))
+
+	// Multi-user / invite codes (protected)
+	mux.HandleFunc("GET /api/invite-codes", withAuth(handleListInviteCodes))
+	mux.HandleFunc("POST /api/invite-codes", withAuth(handleCreateInviteCode))
+	mux.HandleFunc("DELETE /api/invite-codes/{code}", withAuth(handleDeleteInviteCode))
+	mux.HandleFunc("GET /api/consumers", withAuth(handleListConsumers))
+	mux.HandleFunc("POST /api/consumers", withAuth(handleCreateConsumer))
+	mux.HandleFunc("DELETE /api/consumers/{id}", withAuth(handleDeleteConsumer))
+	mux.HandleFunc("POST /api/consumers/{id}/toggle", withAuth(handleToggleConsumer))
+	mux.HandleFunc("POST /api/consumer/register", handleConsumerRegister)
 
 	// Static pages
 	mux.HandleFunc("GET /", handleAdminPage)
@@ -134,6 +149,7 @@ func main() {
 		<-sigCh
 		slog.Info("shutting down...")
 		tracker.Stop()
+		healthChecker.stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		server.Shutdown(ctx)
@@ -163,20 +179,56 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func withOptionalAPIKey(handler http.HandlerFunc) http.HandlerFunc {
+// withProxyAuth authenticates v1 proxy endpoints.
+// Accepts: admin proxy API key (owner="") or consumer API key (owner=consumer_id).
+// If no proxy API key is set and no consumer key matches, allows anonymous access as admin.
+func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		apiKey := cfg.Get("proxy_api_key", "")
-		if apiKey == "" {
-			handler(w, r)
-			return
-		}
 		authHeader := r.Header.Get("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			if authHeader[7:] == apiKey {
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			// No auth header - check if proxy key is required
+			proxyKey := cfg.Get("proxy_api_key", "")
+			if proxyKey == "" {
+				r.Header.Set("X-Request-Owner", "")
+				r.Header.Set("X-Request-Role", "admin")
 				handler(w, r)
 				return
 			}
+			writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
+				Message: "API key required",
+				Type:    "authentication_error",
+				Code:    "missing_api_key",
+			}})
+			return
 		}
+
+		key := authHeader[7:]
+		// Check admin proxy API key first
+		proxyKey := cfg.Get("proxy_api_key", "")
+		if proxyKey != "" && key == proxyKey {
+			r.Header.Set("X-Request-Owner", "")
+			r.Header.Set("X-Request-Role", "admin")
+			handler(w, r)
+			return
+		}
+
+		// Check consumer API key
+		if consumer, ok := multiUser.ValidateAPIKey(key); ok {
+			r.Header.Set("X-Request-Owner", consumer.ID)
+			r.Header.Set("X-Request-Role", "consumer")
+			r.Header.Set("X-Consumer-Name", consumer.Name)
+			handler(w, r)
+			return
+		}
+
+		// If no proxy key is set at all, allow as admin (backward compat)
+		if proxyKey == "" {
+			r.Header.Set("X-Request-Owner", "")
+			r.Header.Set("X-Request-Role", "admin")
+			handler(w, r)
+			return
+		}
+
 		writeJSON(w, 401, ErrorResponse{Error: ErrorDetail{
 			Message: "Invalid API key",
 			Type:    "authentication_error",
@@ -197,6 +249,8 @@ func withAuth(handler http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, 401, map[string]string{"error": "token expired"})
 			return
 		}
+		r.Header.Set("X-Request-Owner", "")
+		r.Header.Set("X-Request-Role", "admin")
 		handler(w, r)
 	}
 }
@@ -240,7 +294,7 @@ func readJSON(r *http.Request, v any) error {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"status":           "ok",
-		"version":          "1.0.0",
+		"version":          "2.0.0",
 		"providers_enabled": len(pm.Enabled()),
 		"models_available": len(pm.AllModels()),
 	})
@@ -266,14 +320,21 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	consumerID := getRequestOwner(r) // "" = admin
 	model := req.Model
 	stream := req.Stream
 
 	// Build extra params
 	extra := make(map[string]any)
-	if req.Temperature != nil { extra["temperature"] = *req.Temperature }
-	if req.TopP != nil { extra["top_p"] = *req.TopP }
-	if req.MaxTokens != nil { extra["max_tokens"] = *req.MaxTokens }
+	if req.Temperature != nil {
+		extra["temperature"] = *req.Temperature
+	}
+	if req.TopP != nil {
+		extra["top_p"] = *req.TopP
+	}
+	if req.MaxTokens != nil {
+		extra["max_tokens"] = *req.MaxTokens
+	}
 	for k, v := range req.Extra {
 		extra[k] = v
 	}
@@ -284,7 +345,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Smart routing with fallback
+	// Smart routing with fallback — uses the unified pool (all providers from all users)
 	routingMode := cfg.Get("routing_mode", "priority")
 	candidates := pm.OrderedCandidates(model, routingMode)
 
@@ -292,7 +353,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		models := pm.AllModels()
 		var names []string
 		for i, m := range models {
-			if i >= 20 { break }
+			if i >= 20 {
+				break
+			}
 			names = append(names, m.ID)
 		}
 		hint := ""
@@ -320,10 +383,20 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
 
 		if stream {
-			err := handleStreamProxy(w, p, actualModel, req.Messages, extra, model, startTime)
+			dataSent, err := handleStreamProxy(w, p, actualModel, req.Messages, extra, model, startTime)
 			if err == nil {
+				if consumerID != "" {
+					multiUser.RecordConsumerUsage(consumerID, 0)
+				}
 				return
 			}
+			// If data was already sent to client, cannot retry with another provider
+			if dataSent {
+				slog.Error("stream failed after data sent", "provider", p.Name, "error", err)
+				return
+			}
+			// No data sent yet — safe to try next provider
+			slog.Warn("stream failed before data sent, trying next provider", "provider", p.Name, "error", err)
 			lastErr = err
 		} else {
 			resp, err := doNonStream(p, actualModel, req.Messages, extra)
@@ -340,6 +413,9 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				compTok = resp.Usage.CompletionTokens
 			}
 			tracker.Record(p.ID, p.Name, model, promptTok, compTok, latencyMS, true, "")
+			if consumerID != "" {
+				multiUser.RecordConsumerUsage(consumerID, promptTok+compTok)
+			}
 			writeJSON(w, 200, resp)
 			return
 		}
@@ -348,37 +424,39 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	writeError(w, 502, fmt.Sprintf("all providers failed: %v", lastErr))
 }
 
-func handleStreamProxy(w http.ResponseWriter, p Provider, model string, messages []ChatMessage, extra map[string]any, origModel string, startTime time.Time) error {
+// handleStreamProxy handles streaming requests. Returns (dataSent bool, err error).
+// If dataSent is true, the response headers have been written and retry is not possible.
+func handleStreamProxy(w http.ResponseWriter, p Provider, model string, messages []ChatMessage, extra map[string]any, origModel string, startTime time.Time) (bool, error) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		return fmt.Errorf("streaming not supported")
+		return false, fmt.Errorf("streaming not supported")
 	}
 
-	// Use a wrapper that implements Flush
 	sw := &streamWriter{w: w, flusher: flusher}
-
 	err := doStream(p, model, messages, extra, sw)
 
 	latencyMS := float64(time.Since(startTime).Milliseconds())
 	if err != nil {
 		tracker.Record(p.ID, p.Name, origModel, 0, 0, latencyMS, false, err.Error())
-		return err
+		return sw.bytesWritten > 0, err
 	}
 	tracker.Record(p.ID, p.Name, origModel, 0, 0, latencyMS, true, "")
-	return nil
+	return sw.bytesWritten > 0, nil
 }
 
 type streamWriter struct {
-	w       http.ResponseWriter
-	flusher http.Flusher
+	w            http.ResponseWriter
+	flusher      http.Flusher
+	bytesWritten int64
 }
 
 func (s *streamWriter) Write(p []byte) (n int, err error) {
 	n, err = s.w.Write(p)
+	s.bytesWritten += int64(n)
 	s.flusher.Flush()
 	return
 }

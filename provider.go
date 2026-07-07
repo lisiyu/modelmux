@@ -64,7 +64,7 @@ func (m *ProviderManager) save() {
 	m.cacheValid = false
 }
 
-// GetAll returns all providers (configured + preset), cached.
+// GetAll returns all providers (configured + preset), cached. This is the unified pool for routing.
 func (m *ProviderManager) GetAll() []Provider {
 	m.mu.RLock()
 	if m.cacheValid {
@@ -95,6 +95,79 @@ func (m *ProviderManager) GetAll() []Provider {
 	m.cachedAll = result
 	m.cacheValid = true
 	return result
+}
+
+// GetAllRaw returns all providers with full API keys (internal use, for routing).
+func (m *ProviderManager) GetAllRaw() []Provider {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	var result []Provider
+
+	for _, p := range m.providers {
+		result = append(result, p)
+		seen[p.ID] = true
+	}
+	for _, p := range presetProviders {
+		if !seen[p.ID] {
+			result = append(result, p)
+			seen[p.ID] = true
+		}
+	}
+	return result
+}
+
+// GetVisible returns providers visible to a specific owner.
+// owner="" means admin (sees all). Otherwise only sees own + presets.
+func (m *ProviderManager) GetVisible(owner string) []Provider {
+	if owner == "" {
+		return m.GetAll() // admin sees everything
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	var result []Provider
+
+	// Own providers
+	for _, p := range m.providers {
+		if p.Owner == owner {
+			result = append(result, p.Safe())
+			seen[p.ID] = true
+		}
+	}
+	// Presets (system-level, visible to all)
+	for _, p := range presetProviders {
+		if !seen[p.ID] {
+			safe := p.Safe()
+			safe.Owner = "system"
+			result = append(result, safe)
+			seen[p.ID] = true
+		}
+	}
+
+	return result
+}
+
+// DeleteByOwner removes all providers owned by a specific consumer.
+func (m *ProviderManager) DeleteByOwner(owner string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	count := 0
+	for id, p := range m.providers {
+		if p.Owner == owner {
+			delete(m.providers, id)
+			count++
+		}
+	}
+	if count > 0 {
+		m.save()
+		slog.Info("deleted providers by owner", "owner", owner, "count", count)
+	}
+	return count
 }
 
 // GetRaw returns a provider with full API key (internal use).

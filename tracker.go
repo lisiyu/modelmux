@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net/smtp"
 	"os"
 	"sync"
 	"time"
@@ -17,6 +19,15 @@ type Tracker struct {
 	ewmaCache    map[string]float64
 	dataPath     string
 	stopCh       chan struct{}
+
+	// Request log ring buffer
+	reqLogMu     sync.RWMutex
+	reqLog       []RequestLogEntry
+	reqLogMax    int
+
+	// Token budget alert thresholds (percentage)
+	alertThresholds []float64
+	alertedTokens   map[string]map[float64]bool // providerID -> threshold -> alerted
 }
 
 const (
@@ -30,13 +41,17 @@ var tracker *Tracker
 
 func initTracker(path string) {
 	tracker = &Tracker{
-		dataPath:  path,
-		ewmaCache: make(map[string]float64),
-		lastFlush: time.Now(),
-		stopCh:    make(chan struct{}),
+		dataPath:        path,
+		ewmaCache:       make(map[string]float64),
+		lastFlush:       time.Now(),
+		stopCh:          make(chan struct{}),
+		reqLogMax:       1000,
+		alertThresholds: []float64{0.8, 0.9, 1.0},
+		alertedTokens:   make(map[string]map[float64]bool),
 	}
 	tracker.load()
 	go tracker.periodicFlush()
+	go tracker.monthlyArchiveLoop()
 }
 
 func (t *Tracker) load() {
@@ -100,19 +115,27 @@ func (t *Tracker) periodicFlush() {
 
 // Record logs one API call.
 func (t *Tracker) Record(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string) {
+	t.RecordWithRetry(providerID, providerName, model, promptTokens, completionTokens, latencyMS, success, errMsg, false, 0)
+}
+
+// RecordWithRetry logs one API call with retry and stream info.
+func (t *Tracker) RecordWithRetry(providerID, providerName, model string, promptTokens, completionTokens int, latencyMS float64, success bool, errMsg string, isStream bool, retryCount int) {
 	cost := 0.0
 	if success {
 		cost = estimateCost(model, promptTokens, completionTokens, providerID)
 	}
 
+	now := time.Now().Format(time.RFC3339)
+	totalTokens := promptTokens + completionTokens
+
 	entry := UsageRecord{
-		Timestamp:        time.Now().Format(time.RFC3339),
+		Timestamp:        now,
 		ProviderID:       providerID,
 		ProviderName:     providerName,
 		Model:            model,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
-		TotalTokens:      promptTokens + completionTokens,
+		TotalTokens:      totalTokens,
 		CostUSD:          cost,
 		LatencyMS:        round1(latencyMS),
 		Success:          success,
@@ -138,6 +161,176 @@ func (t *Tracker) Record(providerID, providerName, model string, promptTokens, c
 		t.save()
 	}
 	t.mu.Unlock()
+
+	// Add to request log ring buffer
+	t.addRequestLog(RequestLogEntry{
+		Timestamp:    now,
+		Method:       model,
+		Model:        model,
+		ProviderID:   providerID,
+		ProviderName: providerName,
+		Success:      success,
+		LatencyMS:    round1(latencyMS),
+		Tokens:       totalTokens,
+		CostUSD:      cost,
+		Error:        errMsg,
+		Stream:       isStream,
+		RetryCount:   retryCount,
+	})
+
+	// Check token budget alerts
+	t.checkTokenBudget(providerID, providerName)
+}
+
+func (t *Tracker) addRequestLog(entry RequestLogEntry) {
+	t.reqLogMu.Lock()
+	defer t.reqLogMu.Unlock()
+	if len(t.reqLog) >= t.reqLogMax {
+		t.reqLog = t.reqLog[len(t.reqLog)-t.reqLogMax+1:]
+	}
+	t.reqLog = append(t.reqLog, entry)
+}
+
+// GetRequestLog returns recent request log entries.
+func (t *Tracker) GetRequestLog(limit int) []RequestLogEntry {
+	t.reqLogMu.RLock()
+	defer t.reqLogMu.RUnlock()
+	if limit <= 0 || limit > len(t.reqLog) {
+		limit = len(t.reqLog)
+	}
+	start := len(t.reqLog) - limit
+	result := make([]RequestLogEntry, limit)
+	copy(result, t.reqLog[start:])
+	return result
+}
+
+// checkTokenBudget checks if any provider has exceeded token budget thresholds.
+func (t *Tracker) checkTokenBudget(providerID, providerName string) {
+	raw, ok := pm.GetRaw(providerID)
+	if !ok || raw.TokenLimit <= 0 {
+		return
+	}
+
+	used := t.tokensUsedByProvider(providerID)
+	ratio := float64(used) / float64(raw.TokenLimit)
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.alertedTokens[providerID] == nil {
+		t.alertedTokens[providerID] = make(map[float64]bool)
+	}
+
+	for _, threshold := range t.alertThresholds {
+		if ratio >= threshold && !t.alertedTokens[providerID][threshold] {
+			t.alertedTokens[providerID][threshold] = true
+			pct := int(threshold * 100)
+			msg := fmt.Sprintf("⚠️ Token 预算告警：平台 [%s] 已使用 %d%% Token 配额（%d/%d）",
+				providerName, pct, used, raw.TokenLimit)
+			slog.Warn("token budget alert", "provider", providerID, "threshold", pct, "used", used, "limit", raw.TokenLimit)
+			go sendBudgetAlert(providerName, msg)
+		}
+	}
+}
+
+func (t *Tracker) tokensUsedByProvider(providerID string) int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var total int64
+	for _, r := range t.records {
+		if r.ProviderID == providerID {
+			total += int64(r.TotalTokens)
+		}
+	}
+	return total
+}
+
+// sendBudgetAlert sends a token budget alert email if SMTP is configured.
+func sendBudgetAlert(providerName, message string) {
+	if !auth.IsSMTPConfigured() {
+		slog.Info("token budget alert (SMTP not configured, skipping email)", "message", message)
+		return
+	}
+	adminEmail := auth.GetEmail()
+	if adminEmail == "" {
+		return
+	}
+	s := auth.GetSMTP()
+	subject := "ModelMux Token 预算告警"
+	msgBody := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
+		subject, s.FromEmail, adminEmail, message)
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	var smtpAuth smtp.Auth
+	if s.Username != "" {
+		smtpAuth = smtp.PlainAuth("", s.Username, s.Password, s.Host)
+	}
+	var err error
+	if s.UseTLS && s.Port == 465 {
+		err = sendMailTLS(addr, smtpAuth, s.FromEmail, []string{adminEmail}, []byte(msgBody))
+	} else {
+		err = smtp.SendMail(addr, smtpAuth, s.FromEmail, []string{adminEmail}, []byte(msgBody))
+	}
+	if err != nil {
+		slog.Error("failed to send budget alert email", "error", err)
+	}
+}
+
+// monthlyArchiveLoop checks monthly and archives old usage data.
+func (t *Tracker) monthlyArchiveLoop() {
+	for {
+		now := time.Now()
+		// Next archive at 1st of next month, 00:05
+		next := time.Date(now.Year(), now.Month()+1, 1, 0, 5, 0, 0, now.Location())
+		sleepDuration := next.Sub(now)
+
+		timer := time.NewTimer(sleepDuration)
+		select {
+		case <-timer.C:
+			t.archiveUsage()
+		case <-t.stopCh:
+			timer.Stop()
+			return
+		}
+	}
+}
+
+func (t *Tracker) archiveUsage() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := time.Now()
+	archiveMonth := now.AddDate(0, -1, 0).Format("2006-01")
+	cutoff := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+
+	var toArchive []UsageRecord
+	var toKeep []UsageRecord
+	for _, r := range t.records {
+		ts, _ := time.Parse(time.RFC3339, r.Timestamp)
+		if ts.Before(cutoff) {
+			toArchive = append(toArchive, r)
+		} else {
+			toKeep = append(toKeep, r)
+		}
+	}
+
+	if len(toArchive) == 0 {
+		slog.Info("no records to archive")
+		return
+	}
+
+	archivePath := fmt.Sprintf("data/usage_%s.json", archiveMonth)
+	b, _ := json.MarshalIndent(toArchive, "", "  ")
+	os.MkdirAll("data", 0755)
+	if err := os.WriteFile(archivePath, b, 0644); err != nil {
+		slog.Error("failed to archive usage", "error", err)
+		return
+	}
+
+	t.records = toKeep
+	t.dirtyCount = 0
+	t.lastFlush = time.Now()
+	t.save()
+	slog.Info("usage archived", "month", archiveMonth, "archived_count", len(toArchive), "remaining", len(toKeep))
 }
 
 // GetEWMA returns cached EWMA latency for a provider (O(1)).
