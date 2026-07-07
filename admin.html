@@ -1366,8 +1366,11 @@ function renderProviders() {
   list.innerHTML = allProviders.map(p => {
     const enabled = p.enabled;
     const models = p.models || [];
-    const keyStatus = p.api_key ? `<span class="badge badge-green">Key: ${p.api_key}</span>` : '<span class="badge badge-red">未配置 Key</span>';
-    const proxyStatus = p.proxy ? (p.proxy.startsWith('vmess://') ? `<span class="badge badge-blue">代理: vmess://***</span>` : `<span class="badge badge-blue">代理: ✓</span>`) : '';
+    const keys = p.api_keys || [];
+    const keyCount = keys.length;
+    const keyStatus = keyCount > 0
+      ? `<span class="badge badge-green">🔑 ${keyCount} 个 Key</span>`
+      : (p.api_key ? `<span class="badge badge-green">Key: ${p.api_key}</span>` : '<span class="badge badge-red">未配置 Key</span>');
     const ac = p.access_control || {};
     const accessBadge = ac.allow_shared_key ? '<span class="badge badge-green" title="允许共享/公共 Key 访问">🌐 共享</span>' : '<span class="badge badge-yellow" title="仅私有 Key 可访问">🔒 私有</span>';
     return `<div class="provider-item" id="p-${p.id}">
@@ -1378,6 +1381,7 @@ function renderProviders() {
           <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
         </div>
         <div class="provider-actions">
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys">🔑 Keys${keyCount > 0 ? '('+keyCount+')' : ''}</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();editProvider('${p.id}')">编辑</button>
@@ -1385,6 +1389,9 @@ function renderProviders() {
           <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();toggleProvider('${p.id}',${!enabled})">${enabled?'禁用':'启用'}</button>
           <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteProvider('${p.id}')">删除</button>
         </div>
+      </div>
+      <div class="provider-apikeys" id="apikeys-${p.id}" style="display:none;padding:12px 16px;background:var(--bg-secondary);border-top:1px solid var(--border-color)">
+        <div id="apikeys-list-${p.id}"><div style="color:var(--text-muted);text-align:center;padding:8px">点击加载 Key 列表</div></div>
       </div>
       <div class="provider-models" id="models-${p.id}">
         ${models.length ? models.map(m => `<div class="model-item"><div><span>${m.id}</span> <span class="model-name">${m.name||''}</span></div><div class="toggle ${m.enabled?'active':''}" onclick="toggleModel('${p.id}','${m.id}')"></div></div>`).join('') : '<div style="color:var(--text-muted);text-align:center;padding:10px">无模型配置</div>'}
@@ -1867,6 +1874,109 @@ async function deleteConsumer(id) {
     await authFetch('/api/consumers/' + id, { method: 'DELETE' });
     toast('已删除'); refreshConsumers();
   } catch(e) { toast('删除失败', 'error'); }
+}
+
+// ============================================================
+// Multi API Key Management
+// ============================================================
+
+async function toggleApiKeys(pid) {
+  const el = document.getElementById('apikeys-' + pid);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    await loadApiKeys(pid);
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function loadApiKeys(pid) {
+  const container = document.getElementById('apikeys-list-' + pid);
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    if (!keys.length) {
+      container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:8px">未配置多 Key，点击下方按钮添加</div>';
+    } else {
+      let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+      for (const k of keys) {
+        const quotaText = k.quota > 0 ? (k.used + '/' + k.quota) : '无限';
+        const accessLabel = k.access_control === 'public' ? '🌐 公共' : k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
+        const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
+        const expiresText = k.expires_at ? '<br><small style="color:var(--text-muted)">过期: ' + new Date(k.expires_at).toLocaleDateString('zh-CN') + '</small>' : '';
+        html += '<tr>';
+        html += '<td style="font-family:monospace">' + k.key + '</td>';
+        html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + pid + '\',\'' + k.id + '\')">重置</button></td>';
+        html += '<td>' + accessLabel + '</td>';
+        html += '<td>' + (k.priority || 1) + '</td>';
+        html += '<td>' + statusBadge + expiresText + '</td>';
+        html += '<td>';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
+        html += '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+    // Add key button
+    container.innerHTML += '<div style="margin-top:8px;text-align:right"><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + pid + '\')">+ 添加 API Key</button></div>';
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error)">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function showAddApiKey(pid) {
+  const key = prompt('请输入 API Key:');
+  if (!key) return;
+  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
+  const access = prompt('访问权限 (private/shared/public):', 'private') || 'private';
+  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys', {
+      method: 'POST',
+      body: JSON.stringify({ key: key, quota: quota, access_control: access, priority: priority, enabled: true })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('✅ API Key 已添加', 'success');
+      await loadApiKeys(pid);
+      await loadProviders();
+    } else {
+      toast('添加失败: ' + (d.error || '未知错误'), 'error');
+    }
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function toggleKeyEnabled(pid, keyId, enabled) {
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: enabled })
+    });
+    toast(enabled ? '已启用' : '已禁用');
+    await loadApiKeys(pid);
+  } catch(e) { toast('操作失败: ' + e.message, 'error'); }
+}
+
+async function deleteApiKey(pid, keyId) {
+  if (!confirm('确定删除此 API Key？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId, { method: 'DELETE' });
+    toast('已删除');
+    await loadApiKeys(pid);
+    await loadProviders();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+async function resetKeyQuota(pid, keyId) {
+  if (!confirm('确定重置此 Key 的已用额度？')) return;
+  try {
+    await authFetch('/api/providers/' + pid + '/keys/' + keyId + '/reset-quota', { method: 'POST' });
+    toast('额度已重置');
+    await loadApiKeys(pid);
+  } catch(e) { toast('重置失败: ' + e.message, 'error'); }
 }
 
 // ============================================================

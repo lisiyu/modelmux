@@ -4,17 +4,21 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
 
 // withFederationAuth restricts access to known federation nodes or authenticated requests.
-// SA-12: localhost access now requires a Federation secret header to prevent
-// unauthorized access from co-located processes in containerized/shared environments.
+// SA-12 (strict): NO localhost bypass. All requests MUST present valid credentials:
+//   - Known node identity (X-Node-ID matching trust pool), OR
+//   - Valid admin JWT token, OR
+//   - Valid Federation shared secret (X-Federation-Secret header)
+//
+// This prevents unauthorized access from co-located processes in containerized
+// or shared-hosting environments where localhost is not a security boundary.
 func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Check X-Node-ID header against known nodes (primary auth path)
+		// Auth path 1: Known node identity (X-Node-ID + trust pool verification)
 		nodeID := r.Header.Get("X-Node-ID")
 		if nodeID != "" && fed != nil {
 			if _, ok := fed.GetNode(nodeID); ok {
@@ -23,7 +27,7 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 
-		// Allow if admin JWT auth is present
+		// Auth path 2: Valid admin JWT token
 		token := extractToken(r)
 		if token != "" {
 			if _, err := auth.VerifyToken(token); err == nil {
@@ -32,25 +36,18 @@ func withFederationAuth(handler http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 
-		// SA-12: localhost access requires Federation secret (prevents co-located process bypass)
-		remoteIP := strings.Split(r.RemoteAddr, ":")[0]
-		if remoteIP == "127.0.0.1" || remoteIP == "::1" || remoteIP == "localhost" {
-			fedSecret := cfg.Get("federation_secret", "")
-			if fedSecret != "" {
-				requestSecret := r.Header.Get("X-Federation-Secret")
-				if requestSecret != "" && requestSecret == fedSecret {
-					handler(w, r)
-					return
-				}
-			}
-			// If no federation_secret is configured, allow localhost (backward compat)
-			if fedSecret == "" {
+		// Auth path 3: Federation shared secret (required for all requests including localhost)
+		fedSecret := cfg.Get("federation_secret", "")
+		if fedSecret != "" {
+			requestSecret := r.Header.Get("X-Federation-Secret")
+			if requestSecret != "" && requestSecret == fedSecret {
 				handler(w, r)
 				return
 			}
 		}
 
-		writeJSON(w, 403, map[string]string{"error": "federation access required"})
+		// All auth paths failed — reject
+		writeJSON(w, 403, map[string]string{"error": "federation authentication required"})
 	}
 }
 

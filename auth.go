@@ -61,7 +61,9 @@ func (a *Auth) save() {
 func (a *Auth) Initialized() bool { return a.data.Initialized }
 
 // validatePasswordStrength checks password complexity requirements.
-// SA-14: Enforces minimum 12 characters with at least 3 of 4 character classes.
+// SA-14 (strict): Enforces minimum 12 characters AND requires ALL 4 character classes:
+// uppercase letters, lowercase letters, digits, and special characters.
+// This is a decentralized public network — password security is paramount.
 func validatePasswordStrength(password string) error {
 	if len(password) < 12 {
 		return errors.New("password must be at least 12 characters")
@@ -79,14 +81,21 @@ func validatePasswordStrength(password string) error {
 			hasSpecial = true
 		}
 	}
-	categories := 0
-	for _, ok := range []bool{hasUpper, hasLower, hasDigit, hasSpecial} {
-		if ok {
-			categories++
-		}
+	var missing []string
+	if !hasUpper {
+		missing = append(missing, "uppercase letter")
 	}
-	if categories < 3 {
-		return errors.New("password must contain at least 3 of: uppercase, lowercase, digits, special characters")
+	if !hasLower {
+		missing = append(missing, "lowercase letter")
+	}
+	if !hasDigit {
+		missing = append(missing, "digit")
+	}
+	if !hasSpecial {
+		missing = append(missing, "special character")
+	}
+	if len(missing) > 0 {
+		return errors.New("password must contain all of: uppercase letter, lowercase letter, digit, special character")
 	}
 	return nil
 }

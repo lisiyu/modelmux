@@ -160,22 +160,22 @@ func main() {
 
 	// Auth (public)
 	mux.HandleFunc("GET /api/setup/status", handleSetupStatus)
-	mux.HandleFunc("POST /api/setup", handleSetup)
-	mux.HandleFunc("POST /api/login", rateLimitByIP(5, "login")(handleLogin)) // SA-10: brute force protection
-	mux.HandleFunc("POST /api/forgot-password", handleForgotPassword)
-	mux.HandleFunc("POST /api/reset-password", handleResetPassword)
-	mux.HandleFunc("POST /api/reset-password/verify", handleVerifyResetToken)
-	mux.HandleFunc("POST /api/auth/reset-with-code", handleResetWithCode)
+	mux.HandleFunc("POST /api/setup", rateLimitByIP(3, "setup")(handleSetup)) // SA-10
+	mux.HandleFunc("POST /api/login", rateLimitByIP(5, "login")(handleLogin)) // SA-10: strict brute force protection
+	mux.HandleFunc("POST /api/forgot-password", rateLimitByIP(3, "forgot_password")(handleForgotPassword)) // SA-10
+	mux.HandleFunc("POST /api/reset-password", rateLimitByIP(5, "reset_password")(handleResetPassword)) // SA-10
+	mux.HandleFunc("POST /api/reset-password/verify", rateLimitByIP(10, "reset_verify")(handleVerifyResetToken)) // SA-10
+	mux.HandleFunc("POST /api/auth/reset-with-code", rateLimitByIP(5, "reset_code")(handleResetWithCode)) // SA-10
 
 	// Auth (protected)
 	mux.HandleFunc("GET /api/auth/verify", withAuth(handleVerifyAuth))
 	mux.HandleFunc("GET /api/config", withAuth(handleGetConfig))
 	mux.HandleFunc("GET /api/config/export", withAuth(handleExportConfig))
-	mux.HandleFunc("POST /api/config/import", withAuth(handleImportConfig))
-	mux.HandleFunc("POST /api/config", withAuth(handleSaveConfig))
+	mux.HandleFunc("POST /api/config/import", rateLimitByIP(5, "config_import")(withAuth(handleImportConfig))) // SA-10
+	mux.HandleFunc("POST /api/config", rateLimitByIP(20, "config_save")(withAuth(handleSaveConfig))) // SA-10
 	mux.HandleFunc("GET /api/status", withAuth(handleStatus))
 	mux.HandleFunc("GET /api/admin/info", withAuth(handleAdminInfo))
-	mux.HandleFunc("POST /api/admin/change-password", withAuth(handleChangePassword))
+	mux.HandleFunc("POST /api/admin/change-password", rateLimitByIP(3, "change_password")(withAuth(handleChangePassword))) // SA-10
 	mux.HandleFunc("POST /api/admin/update-email", withAuth(handleUpdateEmail))
 	mux.HandleFunc("GET /api/share/info", withAuth(handleShareInfo))
 
@@ -220,18 +220,18 @@ func main() {
 	// SMTP (protected)
 	mux.HandleFunc("GET /api/smtp/status", handleSMTPStatus)
 	mux.HandleFunc("GET /api/smtp/config", withAuth(handleGetSMTPConfig))
-	mux.HandleFunc("POST /api/smtp/config", withAuth(handleSaveSMTPConfig))
-	mux.HandleFunc("POST /api/smtp/test", withAuth(handleSMTPTest))
+	mux.HandleFunc("POST /api/smtp/config", rateLimitByIP(5, "smtp_config")(withAuth(handleSaveSMTPConfig))) // SA-10
+	mux.HandleFunc("POST /api/smtp/test", rateLimitByIP(5, "smtp_test")(withAuth(handleSMTPTest))) // SA-10
 
 	// Request logs & health (protected)
 	mux.HandleFunc("GET /api/logs", withAuth(handleRequestLogs))
 	mux.HandleFunc("GET /api/health", withAuth(handleHealthStatus))
 
 	// Domain binding APIs
-	mux.HandleFunc("POST /api/domain/verify", withAuth(handleVerifyDomainToken))
-	mux.HandleFunc("POST /api/domain/bind", withAuth(handleBindDomain))
+	mux.HandleFunc("POST /api/domain/verify", rateLimitByIP(5, "domain_verify")(withAuth(handleVerifyDomainToken))) // SA-10
+	mux.HandleFunc("POST /api/domain/bind", rateLimitByIP(3, "domain_bind")(withAuth(handleBindDomain))) // SA-10
 	mux.HandleFunc("GET /api/domain/status", withAuth(handleGetDomainStatus))
-	mux.HandleFunc("POST /api/domain/unbind", withAuth(handleUnbindDomain))
+	mux.HandleFunc("POST /api/domain/unbind", rateLimitByIP(3, "domain_unbind")(withAuth(handleUnbindDomain))) // SA-10
 
 	// Real-time events (SSE)
 	mux.HandleFunc("GET /events", withAuth(handleSSE))
@@ -264,7 +264,7 @@ func main() {
 	mux.HandleFunc("GET /api/federation/pool", withFederationAuth(handleFederationPool))
 	mux.HandleFunc("POST /api/federation/gossip", withFederationAuth(handleFederationGossip))
 	mux.HandleFunc("POST /api/federation/announce", withFederationAuth(handleFederationAnnounce))
-	mux.HandleFunc("POST /api/federation/relay", handleRelayRequest)
+	mux.HandleFunc("POST /api/federation/relay", rateLimitByIP(60, "federation_relay")(handleRelayRequest)) // SA-10
 	mux.HandleFunc("GET /api/federation/reputations", handleGetReputations)
 	mux.HandleFunc("POST /api/federation/score", withAuth(handlePostScore))
 	mux.HandleFunc("GET /api/federation/credits", withAuth(handleGetCredits))
@@ -281,15 +281,15 @@ func main() {
 	mux.HandleFunc("GET /api/federation/approvals", withAuth(handleGetApprovals))
 	mux.HandleFunc("POST /api/federation/approvals/resolve", withAuth(handleResolveApproval))
 	mux.HandleFunc("POST /api/federation/token-budget", withAuth(handleSetTokenBudget))
-	mux.HandleFunc("POST /api/federation/join", handleJoinNetwork)
+	mux.HandleFunc("POST /api/federation/join", rateLimitByIP(5, "federation_join")(handleJoinNetwork)) // SA-10
 	mux.HandleFunc("GET /api/federation/genesis", handleGetGenesis)
 	mux.HandleFunc("POST /api/federation/invites", withAuth(handleCreateInvite))
 	mux.HandleFunc("GET /api/federation/invites", withAuth(handleListInvites))
-	mux.HandleFunc("POST /api/federation/invites/verify", handleVerifyInvite)
+	mux.HandleFunc("POST /api/federation/invites/verify", rateLimitByIP(10, "invite_verify")(handleVerifyInvite)) // SA-10
 
 	// P2P Shared Network API (Phase 1) — decentralized relay
 	mux.HandleFunc("GET /api/network/status", handleNetworkStatus)
-	mux.HandleFunc("POST /api/network/consent", handleNetworkConsent)
+	mux.HandleFunc("POST /api/network/consent", rateLimitByIP(5, "network_consent")(handleNetworkConsent)) // SA-10
 	mux.HandleFunc("GET /api/network/disclaimer", handleNetworkDisclaimer)
 	mux.HandleFunc("POST /api/network/enable", withAuth(handleNetworkEnable))
 	mux.HandleFunc("POST /api/network/disable", withAuth(handleNetworkDisable))
@@ -325,7 +325,7 @@ func main() {
 	mux.HandleFunc("GET /api/network/algorithm/history", handleAlgorithmHistory)
 	mux.HandleFunc("POST /api/network/algorithm/propose", withAuth(handleAlgorithmPropose))
 	mux.HandleFunc("POST /api/network/algorithm/vote", withAuth(handleAlgorithmVote))
-	mux.HandleFunc("POST /api/network/algorithm/gossip", handleAlgorithmGossip)
+	mux.HandleFunc("POST /api/network/algorithm/gossip", rateLimitByIP(30, "algo_gossip")(handleAlgorithmGossip)) // SA-10
 	mux.HandleFunc("GET /api/network/algorithm/proposals", handleAlgorithmProposals)
 	mux.HandleFunc("GET /api/network/algorithm/validate", handleAlgorithmValidate)
 	mux.HandleFunc("GET /api/network/open-key-quota", handleOpenKeyQuota)
@@ -580,10 +580,10 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	}})
 }
 
-// SA-11: readJSON decodes JSON from request body with a 10MB size limit
-// to prevent memory exhaustion attacks via oversized payloads.
+// SA-11: readJSON decodes JSON from request body with a 1MB size limit
+// to prevent memory exhaustion / DoS attacks via oversized payloads.
 func readJSON(r *http.Request, v any) error {
-	const maxBodySize = 10 << 20 // 10 MB
+	const maxBodySize = 1 << 20 // 1 MB — strict limit for all API endpoints
 	limited := http.MaxBytesReader(nil, r.Body, maxBodySize)
 	defer limited.Close()
 	decoder := json.NewDecoder(limited)
