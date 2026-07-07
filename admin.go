@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 )
 
 // ============================================================
@@ -369,9 +367,10 @@ func handleSetRoutingMode(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetRoutingWeights(w http.ResponseWriter, r *http.Request) {
-	w := pm.getWeights()
-	writeJSON(w, 200, w)
+	weights := pm.getWeights()
+	writeJSON(w, 200, weights)
 }
+
 
 func handleSetRoutingWeights(w http.ResponseWriter, r *http.Request) {
 	var body map[string]float64
