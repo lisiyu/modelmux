@@ -132,14 +132,38 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card">
     <div class="card-title"><span class="icon">🔑</span> API 访问认证</div>
     <div class="section-note">设置后，外部应用调用 /v1/* 接口需携带 <code>Authorization: Bearer &lt;your-key&gt;</code>；留空则不校验（仅适合内网使用）</div>
-    <div class="form-group">
-      <label class="form-label">📡 个人 API 接口地址</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input class="form-input" id="proxyApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')">
-        <button class="btn btn-secondary btn-sm" onclick="copyApiUrl()">📋 复制</button>
+
+    <!-- 地址列表 -->
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">️ 局域网地址</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="lanApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制')">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('lanApiUrl').value)">📋</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">同一局域网内的设备可直接访问</div>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">个人使用：直接调用此地址访问您配置的模型</div>
+      <div>
+        <label class="form-label" style="font-size:12px;margin-bottom:6px">🌍 公网地址 <span id="publicUrlBadge" style="font-size:10px;font-weight:normal"></span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="publicApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted)" onclick="this.select();document.execCommand('copy');toast('已复制')" placeholder="未启用公网访问">
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('publicApiUrl').value)">📋</button>
+        </div>
+        <div id="publicUrlHint" style="font-size:11px;color:var(--text-muted);margin-top:3px">未启用公网访问</div>
+      </div>
     </div>
+
+    <!-- 域名绑定引导 -->
+    <div id="domainBindingQuickCard" style="display:none;margin-bottom:16px;padding:12px;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(178,75,243,.06));border:1px solid rgba(108,99,255,.2);border-radius:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--text-primary)">🔗 绑定域名获取固定地址</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">当前使用随机隧道地址，重启后会变化。绑定域名后获得永久固定 URL。</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="scrollToDomainBinding()" style="flex-shrink:0">去绑定 →</button>
+      </div>
+    </div>
+
     <div class="form-group"><label class="form-label">Proxy API Key</label>
       <div style="display:flex;gap:8px">
         <input class="form-input" id="proxyApiKey" placeholder="留空表示不启用认证" style="flex:1">
@@ -1308,12 +1332,40 @@ select.form-input{appearance:none;cursor:pointer}
       <div id="editKeysSection" style="display:none;margin-bottom:18px;padding:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <label style="font-size:13px;font-weight:500;color:var(--text-secondary)">🔑 已配置的多 Key 管理</label>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="testAllEditKeys()" style="font-size:11px;padding:3px 10px">🧪 批量测试</button>
-            <button class="btn btn-primary btn-sm" onclick="addKeyInEdit()" style="font-size:11px;padding:3px 10px">+ 添加 Key</button>
-          </div>
+          <button class="btn btn-secondary btn-sm" onclick="testAllEditKeys()" style="font-size:11px;padding:3px 10px">🧪 批量测试</button>
         </div>
         <div id="editKeysList"></div>
+        <div id="editKeysInlineRow" style="display:none;margin-top:10px;padding:12px;border-top:1px dashed var(--border-color)">
+          <div style="display:grid;grid-template-columns:1fr 2fr 100px 100px 80px;gap:8px;align-items:end;margin-bottom:8px">
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">别名</label>
+              <input id="newKeyAlias" class="form-input" style="font-size:12px;height:32px" placeholder="可选">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">API Key *</label>
+              <input id="newKeyValue" class="form-input" style="font-size:12px;height:32px" placeholder="sk-...">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">额度(tokens)</label>
+              <input id="newKeyQuota" class="form-input" type="number" style="font-size:12px;height:32px" value="0" placeholder="0=无限">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">优先级</label>
+              <input id="newKeyPriority" class="form-input" type="number" style="font-size:12px;height:32px" value="1" min="1">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">权限</label>
+              <select id="newKeyAccess" class="form-input" style="font-size:12px;height:32px">
+                <option value="private">私有</option>
+                <option value="shared">共享</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn btn-sm btn-secondary" onclick="cancelInlineKey()" style="font-size:11px;padding:3px 10px">取消</button>
+            <button class="btn btn-sm btn-primary" onclick="saveInlineKey()" style="font-size:11px;padding:3px 10px">💾 保存</button>
+          </div>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">代理（可选）</label>
@@ -1917,20 +1969,62 @@ function getIcon(id) {
 }
 
 // ===== Proxy API URL =====
-function initProxyApiUrl() {
-  const urlEl = document.getElementById('proxyApiUrl');
-  if (urlEl) {
-    urlEl.value = window.location.origin + '/v1';
+function initApiUrls() {
+  // 局域网地址
+  const lanEl = document.getElementById('lanApiUrl');
+  if (lanEl) {
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    lanEl.value = (isLocalhost ? 'http://<本机局域网IP>:8000' : window.location.origin) + '/v1';
+    if (isLocalhost) lanEl.style.color = 'var(--text-muted)';
+  }
+  // 公网地址
+  const pubEl = document.getElementById('publicApiUrl');
+  const hintEl = document.getElementById('publicUrlHint');
+  const badgeEl = document.getElementById('publicUrlBadge');
+  const domainQuickCard = document.getElementById('domainBindingQuickCard');
+
+  authFetch('/api/federation/config').then(r => r.json()).then(d => {
+    const tunnelUrl = d.tunnel_url || '';
+    const tunnelDomain = d.tunnel_domain || '';
+    const tunnelEnabled = d.tunnel_enabled === 'true';
+
+    if (tunnelUrl && tunnelEnabled) {
+      if (pubEl) pubEl.value = tunnelUrl + '/v1';
+      if (hintEl) {
+        if (tunnelDomain) {
+          hintEl.textContent = '✅ 已绑定自定义域名，地址固定不变';
+          if (badgeEl) badgeEl.textContent = '(固定)';
+          if (pubEl) pubEl.style.color = 'var(--text-primary)';
+          // 隐藏域名绑定引导
+          if (domainQuickCard) domainQuickCard.style.display = 'none';
+        } else {
+          hintEl.textContent = '⚠️ 当前使用随机隧道地址，重启后会变化';
+          if (badgeEl) badgeEl.textContent = '(临时)';
+          // 显示域名绑定引导
+          if (domainQuickCard) domainQuickCard.style.display = 'block';
+        }
+      }
+    } else {
+      if (pubEl) { pubEl.value = ''; pubEl.placeholder = '未启用公网访问'; }
+      if (hintEl) hintEl.textContent = '未启用公网访问，仅局域网可访问';
+      if (domainQuickCard) domainQuickCard.style.display = 'none';
+    }
+  }).catch(() => {
+    if (hintEl) hintEl.textContent = '获取公网地址失败';
+  });
+}
+
+function scrollToDomainBinding() {
+  const section = document.getElementById('domainBindingSection');
+  if (section) {
+    section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    section.style.transition = 'box-shadow 0.3s';
+    section.style.boxShadow = '0 0 0 2px rgba(108,99,255,.5)';
+    setTimeout(() => { section.style.boxShadow = 'none'; }, 2000);
   }
 }
-function copyApiUrl() {
-  const urlEl = document.getElementById('proxyApiUrl');
-  if (urlEl) {
-    urlEl.select();
-    document.execCommand('copy');
-    toast('已复制到剪贴板');
-  }
-}
+// copyApiUrl removed — use copyText() directly
 
 function copyPersonalLanUrl() {
   const el = document.getElementById('personalLanUrl');
@@ -2319,45 +2413,37 @@ async function testAllKeys(pid) {
 // Edit Form Multi-Key Management
 // ============================================================
 
-async function loadEditKeys(pid) {
-  const container = document.getElementById('editKeysList');
-  try {
-    const r = await authFetch('/api/providers/' + pid + '/keys');
-    const d = await r.json();
-    const keys = d.keys || [];
-    if (!keys.length) {
-      container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px;font-size:12px">暂无多 Key 配置。点击上方「+ 添加 Key」添加。</div>';
-      return;
-    }
-    let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名/Key</th><th>状态</th><th>额度</th><th>操作</th></tr></thead><tbody>';
-    for (const k of keys) {
-      const quotaText = k.quota > 0 ? (k.used + '/' + k.quota) : '无限';
-      const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
-      html += '<tr>';
-      html += '<td style="font-family:monospace">' + (k.alias || k.key.substring(0, 8) + '...') + '</td>';
-      html += '<td>' + statusBadge + '</td>';
-      html += '<td>' + quotaText + '</td>';
-      html += '<td style="white-space:nowrap">';
-      html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">测试</button> ';
-      html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
-      html += '</td>';
-      html += '</tr>';
-    }
-    html += '</tbody></table>';
-    container.innerHTML = html;
-  } catch(e) {
-    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + e.message + '</div>';
+// ===== Multi-Key Inline Editor =====
+function showInlineKeyForm() {
+  document.getElementById('editKeysInlineRow').style.display = 'block';
+  document.getElementById('newKeyAlias').value = '';
+  document.getElementById('newKeyValue').value = '';
+  document.getElementById('newKeyQuota').value = '0';
+  document.getElementById('newKeyPriority').value = '1';
+  document.getElementById('newKeyAccess').value = 'private';
+  document.getElementById('newKeyValue').focus();
+  // Add a "+" button row at bottom of key list if not exists
+  if (!document.getElementById('addKeyRow')) {
+    const addBtn = document.createElement('div');
+    addBtn.id = 'addKeyRow';
+    addBtn.style.cssText = 'margin-top:10px;text-align:center';
+    addBtn.innerHTML = '<button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:11px;padding:4px 14px;border:1px dashed var(--border-color)">+ 添加新 Key</button>';
+    document.getElementById('editKeysList').appendChild(addBtn);
   }
 }
 
-async function addKeyInEdit() {
+function cancelInlineKey() {
+  document.getElementById('editKeysInlineRow').style.display = 'none';
+}
+
+async function saveInlineKey() {
   if (!editingId) return;
-  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
-  const key = prompt('请输入 API Key:');
-  if (!key) return;
-  const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
-  const access = prompt('访问权限 (private/shared/public):', 'private') || 'private';
-  const priority = parseInt(prompt('优先级 (数字越大越优先):', '1'), 10) || 1;
+  const alias = document.getElementById('newKeyAlias').value.trim();
+  const key = document.getElementById('newKeyValue').value.trim();
+  if (!key) { toast('请输入 API Key', 'error'); return; }
+  const quota = parseInt(document.getElementById('newKeyQuota').value, 10) || 0;
+  const priority = parseInt(document.getElementById('newKeyPriority').value, 10) || 1;
+  const access = document.getElementById('newKeyAccess').value;
   try {
     const r = await authFetch('/api/providers/' + editingId + '/keys', {
       method: 'POST',
@@ -2365,13 +2451,52 @@ async function addKeyInEdit() {
     });
     const d = await r.json();
     if (d.success) {
-      toast('✅ API Key 已添加', 'success');
+      toast('✅ Key 已添加', 'success');
+      document.getElementById('editKeysInlineRow').style.display = 'none';
       await loadEditKeys(editingId);
       await loadProviders();
     } else {
       toast('添加失败: ' + (d.error || '未知错误'), 'error');
     }
   } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function loadEditKeys(pid) {
+  const container = document.getElementById('editKeysList');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名</th><th>Key</th><th>状态</th><th>额度</th><th>优先级</th><th>权限</th><th>操作</th></tr></thead><tbody>';
+    if (!keys.length) {
+      html += '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:16px">暂无 Key，点击下方按钮添加</td></tr>';
+    } else {
+      for (const k of keys) {
+        const quotaText = k.quota > 0 ? (k.used.toLocaleString() + '/' + k.quota.toLocaleString()) : '无限';
+        const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
+        const accessLabel = k.access_control === 'shared' ? '共享' : '私有';
+        const maskedKey = k.key ? (k.key.substring(0, 4) + '••••' + k.key.substring(k.key.length - 4)) : '<span style="color:var(--text-muted)">未设置</span>';
+        html += '<tr>';
+        html += '<td>' + (k.alias || '-') + '</td>';
+        html += '<td style="font-family:monospace;font-size:11px">' + maskedKey + '</td>';
+        html += '<td>' + statusBadge + '</td>';
+        html += '<td>' + quotaText + '</td>';
+        html += '<td>' + k.priority + '</td>';
+        html += '<td>' + accessLabel + '</td>';
+        html += '<td style="white-space:nowrap">';
+        html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testEditKey(\'' + pid + '\',\'' + k.id + '\')">测试</button> ';
+        html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteKeyInEdit(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
+        html += '</td>';
+        html += '</tr>';
+      }
+    }
+    html += '</tbody></table>';
+    // Always show the add button
+    html += '<div id="addKeyRow" style="margin-top:10px;text-align:center"><button class="btn btn-primary btn-sm" onclick="showInlineKeyForm()" style="font-size:11px;padding:4px 14px;border:1px dashed var(--border-color)">+ 添加新 Key</button></div>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败: ' + e.message + '</div>';
+  }
 }
 
 async function deleteKeyInEdit(pid, keyId) {
@@ -2990,7 +3115,7 @@ async function createCollabInviteCode() {
 
 // ===== Start (only if authenticated) =====
 if (authToken) {
-  init().then(() => { initProxyApiUrl(); setPersonalApiUrls(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); loadShareInfo(); });
+  init().then(() => { initApiUrls(); setPersonalApiUrls(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); loadShareInfo(); });
 
   // Auto-refresh status and usage every 30 seconds with error handling
   let _pollTimer = setInterval(async () => {
