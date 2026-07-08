@@ -464,49 +464,6 @@ type RelayResponse struct {
 	LatencyMS float64      `json:"latency_ms,omitempty"`
 }
 
-// FederationVote records a vote on a pending node join request.
-type FederationVote struct {
-	VoterNode  string `json:"voter_node"`
-	TargetNode string `json:"target_node"`
-	Approve    bool   `json:"approve"`
-	Comment    string `json:"comment,omitempty"`
-	Timestamp  string `json:"timestamp"`
-	Signature  string `json:"signature"`
-}
-
-// PendingJoinRequest is a node waiting for federation approval.
-type PendingJoinRequest struct {
-	NodeID       string   `json:"node_id"`
-	GitHubUser   string   `json:"github_user"`
-	Endpoint     string   `json:"endpoint"`
-	PubKey       string   `json:"pub_key"`
-	SharedModels []string `json:"shared_models"`
-	RequestedAt  string   `json:"requested_at"`
-	InviteBy     string   `json:"invite_by,omitempty"`
-	Votes        []FederationVote `json:"votes"`
-	Status       string   `json:"status"` // pending, approved, rejected
-	AutoVerified bool     `json:"auto_verified"` // passed auto health check
-}
-
-// CreditTransaction records a credit change.
-type CreditTransaction struct {
-	ID        string `json:"id"`
-	FromNode  string `json:"from_node"` // empty for earning
-	ToNode    string `json:"to_node"`   // empty for earning
-	Amount    int    `json:"amount"`    // positive=credit, negative=debit
-	Reason    string `json:"reason"`    // "relay_call", "invite", "message", etc.
-	Timestamp string `json:"timestamp"`
-}
-
-// NodeCredits tracks a node's credit balance.
-type NodeCredits struct {
-	NodeID       string              `json:"node_id"`
-	Balance      int                 `json:"balance"`
-	TotalEarned  int                 `json:"total_earned"`
-	TotalSpent   int                 `json:"total_spent"`
-	Transactions []CreditTransaction `json:"transactions,omitempty"`
-}
-
 // FederationConfig holds federation-specific configuration.
 type FederationConfig struct {
 	Enabled          bool   `json:"enabled"`

@@ -80,11 +80,6 @@ const (
 	// Global pool refresh interval
 	globalPoolRefreshInterval = 2 * time.Minute
 
-	// Global key default quota
-	globalKeyDefaultQuota int64 = 50000
-
-	// Global key expiration (days)
-	globalKeyExpDays = 30
 )
 
 // ============================================================
@@ -428,16 +423,6 @@ func (gp *GlobalPool) topContributorsLocked(n int) []map[string]any {
 	return result
 }
 
-// CanSignGlobalKey checks if a node has enough contribution to sign a global key.
-func (gp *GlobalPool) CanSignGlobalKey(nodeID string) (bool, int64, int64) {
-	gp.mu.RLock()
-	defer gp.mu.RUnlock()
-
-	contrib := gp.NodeContributions[nodeID]
-	threshold := globalKeySigningThreshold
-	return contrib >= threshold, contrib, threshold
-}
-
 // SelectBestNode selects the best node for routing a global key request.
 //综合考虑: contribution ratio, reputation, latency, load.
 func (gp *GlobalPool) SelectBestNode(requestedRegion string) *GlobalPoolNode {
@@ -530,113 +515,6 @@ func (gp *GlobalPool) refreshLoop() {
 		gp.mu.Unlock()
 		gp.doSave()
 	}
-}
-
-// ============================================================
-// Global Key Issuance
-// ============================================================
-
-// GlobalKeyInfo holds information about a global key.
-type GlobalKeyInfo struct {
-	Key        string `json:"key"`
-	IssuerNode string `json:"issuer_node"`
-	Quota      int64  `json:"quota"`
-	Used       int64  `json:"used"`
-	IssuedAt   string `json:"issued_at"`
-	Active     bool   `json:"active"`
-}
-
-// globalKeyStore tracks all issued global keys.
-type globalKeyStore struct {
-	mu       sync.RWMutex
-	keys     []*GlobalKeyInfo
-	dataPath string
-}
-
-var globalKeys *globalKeyStore
-
-func initGlobalKeyStore(dataDir string) {
-	globalKeys = &globalKeyStore{
-		keys:     make([]*GlobalKeyInfo, 0),
-		dataPath: filepath.Join(dataDir, "global_keys.json"),
-	}
-	globalKeys.load()
-	slog.Info("global key store initialized", "keys", len(globalKeys.keys))
-}
-
-func (gks *globalKeyStore) load() {
-	b, err := os.ReadFile(gks.dataPath)
-	if err != nil {
-		return
-	}
-	var data struct {
-		Keys []*GlobalKeyInfo `json:"keys"`
-	}
-	if err := json.Unmarshal(b, &data); err != nil {
-		return
-	}
-	gks.mu.Lock()
-	defer gks.mu.Unlock()
-	if data.Keys != nil {
-		gks.keys = data.Keys
-	}
-}
-
-func (gks *globalKeyStore) save() {
-	gks.mu.RLock()
-	defer gks.mu.RUnlock()
-	gks.doSave()
-}
-
-func (gks *globalKeyStore) doSave() {
-	data := struct {
-		Keys []*GlobalKeyInfo `json:"keys"`
-	}{
-		Keys: gks.keys,
-	}
-	b, _ := json.MarshalIndent(data, "", "  ")
-	os.MkdirAll(filepath.Dir(gks.dataPath), 0755)
-	os.WriteFile(gks.dataPath, b, 0600)
-}
-
-// IssueGlobalKey is deprecated in v2.0. The public key is now a fixed constant (mk_public_v1).
-// This function is kept as a stub for backward compatibility.
-func (gks *globalKeyStore) IssueGlobalKey(quota int64) (string, *GlobalKeyInfo, error) {
-	// v2.0: Return the fixed public key constant
-	info := &GlobalKeyInfo{
-		Key:        PublicKeyValue,
-		IssuerNode: "system",
-		Quota:      0,
-		Used:       0,
-		IssuedAt:   time.Now().Format(time.RFC3339),
-		Active:     true,
-	}
-	return PublicKeyValue, info, nil
-}
-
-// GetActiveGlobalKeys returns all active global keys.
-func (gks *globalKeyStore) GetActiveGlobalKeys() []*GlobalKeyInfo {
-	gks.mu.RLock()
-	defer gks.mu.RUnlock()
-	result := make([]*GlobalKeyInfo, 0)
-	for _, k := range gks.keys {
-		if k.Active {
-			result = append(result, k)
-		}
-	}
-	return result
-}
-
-// RevokeGlobalKey deactivates a global key by index.
-func (gks *globalKeyStore) RevokeGlobalKey(index int) error {
-	gks.mu.Lock()
-	defer gks.mu.Unlock()
-	if index < 0 || index >= len(gks.keys) {
-		return fmt.Errorf("invalid key index")
-	}
-	gks.keys[index].Active = false
-	gks.doSave()
-	return nil
 }
 
 // ============================================================
@@ -764,75 +642,4 @@ func handleGlobalPoolStats(w http.ResponseWriter, r *http.Request) {
 
 	stats := globalPool.GetStats()
 	writeJSON(w, 200, stats)
-}
-
-// ============================================================
-// API Handlers — Global Keys
-// ============================================================
-
-// POST /api/network/global-keys/issue — issue a global key (JWT)
-func handleGlobalKeyIssue(w http.ResponseWriter, r *http.Request) {
-	if globalKeys == nil || globalPool == nil {
-		writeError(w, 500, "global key system not initialized")
-		return
-	}
-
-	var body struct {
-		Quota int64 `json:"quota"`
-	}
-	if err := readJSON(r, &body); err != nil {
-		writeError(w, 400, "invalid request body")
-		return
-	}
-
-	key, info, err := globalKeys.IssueGlobalKey(body.Quota)
-	if err != nil {
-		writeError(w, 400, err.Error())
-		return
-	}
-
-	writeJSON(w, 200, map[string]any{
-		"status": "issued",
-		"key":    key,
-		"info":   info,
-	})
-}
-
-// GET /api/network/global-keys — list all global keys (JWT)
-func handleGlobalKeyList(w http.ResponseWriter, r *http.Request) {
-	if globalKeys == nil {
-		writeJSON(w, 200, map[string]any{"keys": []any{}})
-		return
-	}
-
-	keys := globalKeys.GetActiveGlobalKeys()
-	writeJSON(w, 200, map[string]any{
-		"keys":  keys,
-		"count": len(keys),
-	})
-}
-
-// DELETE /api/network/global-keys/{index} — revoke a global key (JWT)
-func handleGlobalKeyRevoke(w http.ResponseWriter, r *http.Request) {
-	if globalKeys == nil {
-		writeError(w, 500, "global key system not initialized")
-		return
-	}
-
-	indexStr := r.PathValue("index")
-	var index int
-	if _, err := fmt.Sscanf(indexStr, "%d", &index); err != nil {
-		writeError(w, 400, "invalid key index")
-		return
-	}
-
-	if err := globalKeys.RevokeGlobalKey(index); err != nil {
-		writeError(w, 400, err.Error())
-		return
-	}
-
-	writeJSON(w, 200, map[string]any{
-		"status": "revoked",
-		"index":  index,
-	})
 }

@@ -166,9 +166,14 @@ func main() {
 	// Health
 	mux.HandleFunc("GET /health", handleHealth)
 
-	// OpenAI-compatible endpoints (supports admin proxy key + consumer keys)
-	mux.HandleFunc("GET /v1/models", withProxyAuth(rateLimitMiddleware(handleListModels)))
-	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(rateLimitMiddleware(handleChatCompletions)))
+	// OpenAI-compatible endpoints — Gateway mode
+	// These routes act as both direct handlers and gateway routers:
+	// - If route table has suitable nodes, requests are forwarded to the best node
+	// - Otherwise, they fall back to local provider handling
+	mux.HandleFunc("GET /v1/models", withProxyAuth(rateLimitMiddleware(handleGatewayModels)))
+	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
+	mux.HandleFunc("POST /v1/completions", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
+	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
 
 	// Auth (public)
 	mux.HandleFunc("GET /api/setup/status", handleSetupStatus)

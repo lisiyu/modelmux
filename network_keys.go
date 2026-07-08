@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/ed25519"
 	crypto_rand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -379,12 +378,3 @@ func handleUpdateQuotaAllocation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ============================================================
-// Legacy compatibility stubs
-// ============================================================
-
-// fetchPeerPublicKey is a legacy stub kept for backward compatibility.
-// In v2.0, peer public key verification is not needed for key validation.
-func fetchPeerPublicKey(addresses []string) ed25519.PublicKey {
-	return nil
-}

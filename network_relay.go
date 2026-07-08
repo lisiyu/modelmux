@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -355,13 +357,258 @@ func queryBootstrapForNode(nodeID string) *RouteEntry {
 	}
 	return nil
 }
-// extractModelFromPath tries to extract a model name from the request path.
-// e.g. /v1/chat/completions doesn't contain model in path, so returns "".
-// For POST requests the model is in the body, but we can't read it here.
-// This is a best-effort helper — returns "" if no model in path.
-func extractModelFromPath(path string) string {
-	// OpenAI paths: /v1/chat/completions, /v1/completions, /v1/models
-	// Model is typically in the request body, not the path
-	// Return empty — the actual model check happens at the proxy auth layer
-	return ""
+// ============================================================
+// Gateway Mode — Unified Entry Point
+// ============================================================
+//
+// Gateway mode allows consumers to access the network without knowing
+// the target NodeID. Requests to /v1/* are automatically routed to
+// the best available node based on model, latency, and load.
+//
+// Flow:
+//   1. Consumer sends request to /v1/chat/completions (standard OpenAI SDK)
+//   2. Gateway parses the model field from request body
+//   3. RouteTable.SelectBestNode picks the optimal node
+//   4. Request is forwarded to the selected node
+//   5. Response (streaming or non-streaming) is transparently relayed
+//
+// If no suitable node is found, the request falls back to local processing.
+
+// handleGatewayRequest handles /v1/chat/completions, /v1/completions, /v1/embeddings
+// in gateway mode. It selects the best node and forwards the request.
+func handleGatewayRequest(w http.ResponseWriter, r *http.Request) {
+	// Check hop count to prevent loops
+	hopCount := 0
+	if hopStr := r.Header.Get(headerRelayHop); hopStr != "" {
+		hopCount, _ = strconv.Atoi(hopStr)
+	}
+	if hopCount >= maxRelayHops {
+		writeError(w, 508, "max relay hops exceeded")
+		slog.Warn("gateway loop detected", "hops", hopCount)
+		return
+	}
+
+	// Read and buffer the body so we can parse model and re-send
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, 400, "failed to read request body")
+		return
+	}
+	r.Body.Close()
+
+	// Parse model from body
+	var bodyMap map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
+		writeError(w, 400, "invalid JSON body")
+		return
+	}
+
+	model := ""
+	if rawModel, ok := bodyMap["model"]; ok {
+		json.Unmarshal(rawModel, &model)
+	}
+
+	stream := false
+	if rawStream, ok := bodyMap["stream"]; ok {
+		json.Unmarshal(rawStream, &stream)
+	}
+
+	// Try to find the best node for this model
+	var bestNode *RouteEntry
+	if routeTable != nil && model != "" {
+		bestNode = routeTable.SelectBestNode(model)
+	}
+
+	// If no node found or route table is empty, fallback to local handling
+	if bestNode == nil {
+		slog.Debug("gateway: no suitable node found, falling back to local", "model", model)
+		handleGatewayFallback(w, r, bodyBytes, model, stream)
+		return
+	}
+
+	// Check if the best node is ourselves — handle locally
+	selfID := ""
+	if netMgr != nil {
+		selfID = netMgr.GetNodeID()
+	}
+	if bestNode.NodeID == selfID {
+		slog.Debug("gateway: best node is self, handling locally", "model", model, "node_id", selfID)
+		handleGatewayFallback(w, r, bodyBytes, model, stream)
+		return
+	}
+
+	// Forward to the selected remote node
+	slog.Info("gateway: routing request", "model", model, "target_node", bestNode.NodeID, "stream", stream, "hop", hopCount+1)
+	gatewayForwardToRemote(w, r, bestNode, bodyBytes, hopCount, stream)
+}
+
+// handleGatewayFallback handles the request locally when no remote node is suitable.
+// It re-constructs the request body and dispatches to local handlers.
+func handleGatewayFallback(w http.ResponseWriter, r *http.Request, bodyBytes []byte, model string, stream bool) {
+	// Reconstruct the request body
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	r.ContentLength = int64(len(bodyBytes))
+
+	// Dispatch based on path
+	switch r.URL.Path {
+	case "/v1/chat/completions":
+		handleChatCompletions(w, r)
+	case "/v1/completions":
+		// For completions, use the same chat handler path (will use local providers)
+		handleChatCompletions(w, r)
+	case "/v1/embeddings":
+		// Embeddings: pass through to local handler if available, else error
+		writeError(w, 501, "embeddings not supported in gateway fallback mode")
+	default:
+		writeError(w, 404, "unknown gateway endpoint")
+	}
+}
+
+// gatewayForwardToRemote forwards the gateway request to a remote node.
+// Supports both streaming (SSE) and non-streaming responses.
+func gatewayForwardToRemote(w http.ResponseWriter, r *http.Request, entry *RouteEntry, bodyBytes []byte, hopCount int, stream bool) {
+	// Pick the best address
+	targetAddr := pickBestAddress(entry.Addresses)
+	if targetAddr == "" {
+		writeError(w, 502, "no reachable address for node")
+		return
+	}
+
+	// Enforce HTTPS for relay
+	if !strings.HasPrefix(targetAddr, "https://") {
+		slog.Warn("gateway: relay target uses insecure protocol, rejecting", "node_id", entry.NodeID, "addr", targetAddr)
+		writeError(w, 502, "relay target must use HTTPS for security")
+		return
+	}
+
+	target, err := url.Parse(targetAddr)
+	if err != nil {
+		writeError(w, 502, "invalid target address")
+		return
+	}
+
+	relayFrom := ""
+	if netMgr != nil {
+		relayFrom = netMgr.GetNodeID()
+	}
+
+	relayStart := time.Now()
+
+	// Build the outbound request
+	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, target.String()+r.URL.Path, bytes.NewReader(bodyBytes))
+	if err != nil {
+		writeError(w, 500, "failed to create relay request")
+		return
+	}
+
+	// Copy query parameters
+	outReq.URL.RawQuery = r.URL.RawQuery
+
+	// Copy headers (preserve Authorization for transparent key forwarding)
+	for key, vals := range r.Header {
+		for _, val := range vals {
+			outReq.Header.Add(key, val)
+		}
+	}
+
+	// Set relay headers
+	outReq.Header.Set(headerRelayHop, strconv.Itoa(hopCount+1))
+	if relayFrom != "" {
+		outReq.Header.Set(headerRelayFrom, relayFrom)
+	}
+
+	outReq.ContentLength = int64(len(bodyBytes))
+	outReq.Host = target.Host
+
+	// Execute the request
+	client := GetSharedHTTPClient()
+	resp, err := client.Do(outReq)
+	if err != nil {
+		slog.Error("gateway: relay to remote failed", "target", entry.NodeID, "addr", targetAddr, "error", err)
+		if netMgr != nil {
+			netMgr.RecordRelayResult(false)
+		}
+		if lbInstance != nil {
+			lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), false)
+		}
+		writeError(w, 502, fmt.Sprintf("relay to %s failed: %v", entry.NodeID, err))
+		return
+	}
+	defer resp.Body.Close()
+
+	// Record relay result
+	success := resp.StatusCode < 400
+	if netMgr != nil {
+		netMgr.RecordRelayResult(success)
+	}
+	if lbInstance != nil {
+		lbInstance.RecordRequest(entry.NodeID, time.Since(relayStart), success)
+	}
+
+	// Copy response headers
+	for key, vals := range resp.Header {
+		for _, val := range vals {
+			w.Header().Add(key, val)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	// Stream the response body back to the client
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			_, writeErr := w.Write(buf[:n])
+			if writeErr != nil {
+				slog.Debug("gateway: client disconnected during relay", "error", writeErr)
+				return
+			}
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+		if readErr != nil {
+			if readErr != io.EOF {
+				slog.Debug("gateway: relay body read error", "error", readErr)
+			}
+			return
+		}
+	}
+}
+
+// handleGatewayModels returns an aggregated list of all models available across the network.
+// Models from all route table entries are deduplicated and merged with local models.
+func handleGatewayModels(w http.ResponseWriter, r *http.Request) {
+	// Collect models from all route table entries
+	modelSet := make(map[string]bool)
+
+	if routeTable != nil {
+		entries := routeTable.GetAll()
+		for _, entry := range entries {
+			for _, m := range entry.Models {
+				modelSet[m] = true
+			}
+		}
+	}
+
+	// Also include local models
+	if pm != nil {
+		localModels := pm.AllModels()
+		for _, m := range localModels {
+			modelSet[m.ID] = true
+		}
+	}
+
+	// Build deduplicated list
+	models := make([]ModelInfo, 0, len(modelSet))
+	for id := range modelSet {
+		models = append(models, ModelInfo{
+			ID:       id,
+			Object:   "model",
+			Created:  time.Now().Unix(),
+			OwnedBy:  "network",
+		})
+	}
+
+	writeJSON(w, 200, ModelListResponse{Object: "list", Data: models})
 }

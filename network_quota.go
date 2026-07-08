@@ -235,23 +235,6 @@ func (m *OpenKeyQuotaManager) RefreshAllQuotas() {
 	}
 	netMgr.mu.RUnlock()
 
-	// Add nodes from unlock states
-	if netMgr != nil {
-		netMgr.mu.RLock()
-		for nodeID := range netMgr.config.NodeUnlockStates {
-			found := false
-			for _, n := range nodes {
-				if n == nodeID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				nodes = append(nodes, nodeID)
-			}
-		}
-		netMgr.mu.RUnlock()
-	}
 
 	for _, nodeID := range nodes {
 		m.CalculateUserQuota(nodeID)

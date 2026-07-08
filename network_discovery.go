@@ -481,21 +481,6 @@ func RecordContribution(fromNodeID string, tokensUsed int64) {
 		}
 	}
 
-	// Phase 2: Track contribution for unlock state
-	if netMgr.config.NodeUnlockStates == nil {
-		netMgr.config.NodeUnlockStates = make(map[string]*NodeUnlockState)
-	}
-	if fromNodeID != "" {
-		state, exists := netMgr.config.NodeUnlockStates[fromNodeID]
-		if !exists {
-			state = &NodeUnlockState{
-				NodeID:   fromNodeID,
-				Unlocked: false,
-			}
-			netMgr.config.NodeUnlockStates[fromNodeID] = state
-		}
-		state.ContribPoints += points
-	}
 
 	netMgr.doSave()
 }
@@ -595,23 +580,7 @@ func verifyHeartbeatAuth(nodeID, signatureB64 string) bool {
 }
 
 // lookupNodePublicKey finds the Ed25519 public key for a given node_id.
+// v2.0: Legacy stub — peer key lookup is handled via federation trust pool.
 func lookupNodePublicKey(nodeID string) ed25519.PublicKey {
-	if node == nil {
-		return nil
-	}
-	// Check known peers
-	if netMgr != nil {
-		netMgr.mu.RLock()
-		defer netMgr.mu.RUnlock()
-		for _, peer := range netMgr.config.Peers {
-			if peer.NodeID == nodeID {
-				// For peers we know, try to fetch their public key
-				if len(peer.Addresses) > 0 {
-					return fetchPeerPublicKey(peer.Addresses)
-				}
-				return nil
-			}
-		}
-	}
 	return nil
 }

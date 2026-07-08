@@ -305,11 +305,6 @@ func (lb *LoadBalancer) getReputationScore(nodeID string) float64 {
 		}
 	}
 
-	// Check unlock state contribution points as proxy
-	if state, ok := netMgr.config.NodeUnlockStates[nodeID]; ok && state != nil {
-		// Normalize contrib points: 0-1000 → 0-100
-		return math.Min(float64(state.ContribPoints)/10.0, 100.0)
-	}
 
 	// Unknown node — neutral
 	return 50.0
