@@ -858,6 +858,52 @@ func (oks *openKeyStore) doSave() {
 	os.WriteFile(oks.dataPath, b, 0600)
 }
 
+// GenerateGlobalPublicKey creates the network's auto-generated public key.
+// Format: mk_open_global_{node_id}_{random_hex}.{payload_b64}.{sig_hex}
+// This key is generated when a node joins the shared network and is displayed
+// in the UI as the "网络公共 Key".
+func GenerateGlobalPublicKey(nodeID string) (string, error) {
+	if node == nil || !node.IsInitialized() {
+		return "", fmt.Errorf("node identity not initialized")
+	}
+	if nodeID == "" {
+		return "", fmt.Errorf("node_id is required")
+	}
+
+	randBytes := make([]byte, 8)
+	if _, err := crypto_rand.Read(randBytes); err != nil {
+		return "", fmt.Errorf("generate random: %w", err)
+	}
+	randHex := hex.EncodeToString(randBytes)
+	consumerID := fmt.Sprintf("open_global_%s_%s", nodeID, randHex)
+
+	now := time.Now()
+	payload := KeyPayload{
+		Sub:    consumerID,
+		Iss:    nodeID,
+		Quota:  0, // dynamic quota based on contribution
+		Used:   0,
+		Models: []string{},
+		Iat:    now.Unix(),
+		Exp:    now.Add(365 * 24 * time.Hour).Unix(), // 1 year validity
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal payload: %w", err)
+	}
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	sigHex := node.SignHex([]byte(payloadB64))
+	if sigHex == "" {
+		return "", fmt.Errorf("node private key not available")
+	}
+
+	fullKey := fmt.Sprintf("mk_open_global_%s_%s.%s.%s", nodeID, randHex, payloadB64, sigHex)
+	slog.Info("generated global public key", "node_id", nodeID, "key_prefix", fullKey[:min(len(fullKey), 40)]+"...")
+	return fullKey, nil
+}
+
 // IssueOpenKeyUnbound creates an unbound open key for zero-barrier experience.
 // Format: mk_open_{random_hex}
 func (oks *openKeyStore) IssueOpenKeyUnbound() (string, *OpenKeyInfo, error) {

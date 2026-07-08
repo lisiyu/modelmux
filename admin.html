@@ -454,6 +454,8 @@ select.form-input{appearance:none;cursor:pointer}
   <div class="card" id="federationCard">
     <div class="card-title"><span class="icon">🌐</span> 联邦网络 v3.0 <span id="fedEnabledStatus" style="font-size:12px;font-weight:normal;margin-left:8px"></span></div>
 
+    <!-- 个人模式专属区域（加入共享网络后隐藏） -->
+    <div id="personalModeSection">
     <!-- 📡 API 访问地址（个人代理模式） -->
     <div style="background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px;padding:14px 18px;margin-bottom:16px">
       <div style="font-size:14px;font-weight:600;margin-bottom:12px">📡 API 访问地址</div>
@@ -659,6 +661,7 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
       </div>
     </div>
+    </div><!-- /personalModeSection -->
 
     <!-- GitHub 绑定 -->
     <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
@@ -774,6 +777,25 @@ select.form-input{appearance:none;cursor:pointer}
 
     <!-- 已启用状态：网络面板 -->
     <div id="networkActive" style="display:none">
+      <!-- 🌍 全球接入点（醒目卡片） -->
+      <div style="background:linear-gradient(135deg,rgba(108,99,255,.15),rgba(16,185,129,.15));border:2px solid rgba(108,99,255,.4);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="font-size:16px;font-weight:700;margin-bottom:12px;color:var(--primary)">🌍 您的全球接入点</div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">🌐 全球统一地址（所有客户端使用相同地址）</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="netGlobalUrl" readonly style="flex:1;font-family:monospace;font-size:14px;font-weight:600" onclick="this.select();document.execCommand('copy');toast('已复制全球地址')">
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('netGlobalUrl').select();document.execCommand('copy');toast('已复制')">📋 复制</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">🔑 您的网络公共 Key（自动签发）</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="netPublicKey" readonly style="flex:1;font-family:monospace;font-size:13px;font-weight:600" onclick="this.select();document.execCommand('copy');toast('已复制 Key')" placeholder="加入网络后自动生成">
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('netPublicKey').select();document.execCommand('copy');toast('已复制')">📋 复制</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 网络状态 -->
       <div class="status-grid" style="margin-bottom:16px">
         <div class="status-item">
@@ -1622,7 +1644,7 @@ function renderProviders() {
           <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 📊 额度: ${p.token_limit > 0 ? p.token_limit.toLocaleString() + ' tokens' : '无限'}</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
         </div>
         <div class="provider-actions">
-          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys">🔑 Keys${keyCount > 0 ? '('+keyCount+')' : ''}</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys，支持多 Key 轮询和故障转移" style="border-color:rgba(108,99,255,.4);color:var(--primary)">🔑 Keys${keyCount > 0 ? '('+keyCount+')' : ''}</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncProviderUrl('${p.id}')">同步地址</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();syncModels('${p.id}')">同步模型</button>
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();editProvider('${p.id}')">编辑</button>
@@ -1632,6 +1654,7 @@ function renderProviders() {
         </div>
       </div>
       <div class="provider-apikeys" id="apikeys-${p.id}" style="display:none;padding:12px 16px;background:var(--bg-secondary);border-top:1px solid var(--border-color)">
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;padding:8px 12px;background:rgba(108,99,255,.04);border-radius:6px;border:1px solid rgba(108,99,255,.1)">💡 多 Key 管理：为同一平台配置多个 API Key，系统自动轮询/故障转移。可设置不同额度、权限和优先级。</div>
         <div id="apikeys-list-${p.id}"><div style="color:var(--text-muted);text-align:center;padding:8px">点击加载 Key 列表</div></div>
       </div>
       <div class="provider-models" id="models-${p.id}">
@@ -3011,10 +3034,27 @@ if (authToken) {
         inactive.style.display = 'none';
         active.style.display = '';
 
-        // Set P2P unified address
+        // Hide personal mode section in federationCard
+        const personalSection = document.getElementById('personalModeSection');
+        if (personalSection) personalSection.style.display = 'none';
+
+        // Set P2P unified address (both the top card and the lower section)
+        const globalUrlEl = document.getElementById('netGlobalUrl');
+        if (globalUrlEl && s.node_id) {
+          globalUrlEl.value = 'mmx://' + s.node_id;
+        }
         const p2pUrlEl = document.getElementById('netP2PUrl');
         if (p2pUrlEl && s.node_id) {
           p2pUrlEl.value = 'mmx://' + s.node_id;
+        }
+
+        // Set network public key in the top card
+        const pubKeyEl = document.getElementById('netPublicKey');
+        if (pubKeyEl) {
+          pubKeyEl.value = s.public_key || '';
+          if (!s.public_key) {
+            pubKeyEl.placeholder = '加入网络后自动生成';
+          }
         }
 
         // Set global key dynamic quota info
@@ -3074,6 +3114,10 @@ if (authToken) {
         modeLabel.style.marginLeft = '8px';
         inactive.style.display = '';
         active.style.display = 'none';
+
+        // Show personal mode section in federationCard
+        const personalSection = document.getElementById('personalModeSection');
+        if (personalSection) personalSection.style.display = '';
         
         // Update personal API access URLs
         setPersonalApiUrls();
@@ -3223,7 +3267,11 @@ if (authToken) {
         if (!r2.ok) { toast(d.error || '启用失败', 'error'); return; }
 
         closeNetworkDisclaimer();
-        toast('🎉 已加入共享网络！NodeID: ' + (d.node_id || ''), 'success');
+        let msg = '🎉 已加入共享网络！NodeID: ' + (d.node_id || '');
+        if (d.public_key) {
+          msg += '\n🔑 公共 Key 已自动生成';
+        }
+        toast(msg, 'success');
         await loadNetworkStatus();
       } catch(e) {
         toast('加入失败: ' + e.message, 'error');

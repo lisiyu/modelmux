@@ -61,6 +61,9 @@ type NetworkConfig struct {
 	// Phase 2 Economic Model
 	TrialPool         TrialPool                       `json:"trial_pool"`
 	NodeUnlockStates  map[string]*NodeUnlockState     `json:"node_unlock_states"`
+
+	// Auto-generated public key for the network (mk_open_global_... format)
+	PublicKeys        []string                        `json:"public_keys"`
 }
 
 // PeerInfo represents a connected peer in the shared network
@@ -422,6 +425,17 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 		Progress: 1.0,
 	}
 
+	// Auto-generate global public key if not already present
+	if len(nm.config.PublicKeys) == 0 {
+		pk, err := GenerateGlobalPublicKey(nm.config.NodeID)
+		if err != nil {
+			slog.Warn("failed to generate global public key", "error", err)
+		} else {
+			nm.config.PublicKeys = []string{pk}
+			slog.Info("auto-generated global public key for network", "node_id", nm.config.NodeID)
+		}
+	}
+
 	nm.doSave()
 
 	go nm.registerSelf()
@@ -520,6 +534,14 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		// Phase 2 Economic Model
 		"trial_pool_count":  len(nm.config.TrialPool.TrialKeys),
 		"unlock_states":     len(nm.config.NodeUnlockStates),
+
+		// Auto-generated public key
+		"public_key": func() string {
+			if len(nm.config.PublicKeys) > 0 {
+				return nm.config.PublicKeys[0]
+			}
+			return ""
+		}(),
 	}
 }
 
@@ -814,7 +836,15 @@ func handleNetworkEnable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"status": "enabled", "mode": "shared", "node_id": netMgr.config.NodeID})
+	resp := map[string]any{
+		"status":  "enabled",
+		"mode":    "shared",
+		"node_id": netMgr.config.NodeID,
+	}
+	if len(netMgr.config.PublicKeys) > 0 {
+		resp["public_key"] = netMgr.config.PublicKeys[0]
+	}
+	writeJSON(w, 200, resp)
 }
 
 func handleNetworkDisable(w http.ResponseWriter, r *http.Request) {
