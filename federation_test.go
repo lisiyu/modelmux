@@ -51,15 +51,14 @@ func initTestReputation(t *testing.T, dir string) *ReputationManager {
 	return repMgr
 }
 
-// initTestCredits creates a CreditsManager with isolated storage.
-func initTestCredits(t *testing.T, dir string) *CreditsManager {
+// initTestAllocation creates an AllocationManager with isolated storage (v2.0).
+func initTestAllocation(t *testing.T, dir string) *AllocationManager {
 	t.Helper()
-	credits = &CreditsManager{
-		balance:      0,
-		transactions: []CreditTransaction{},
-		dataDir:      dir,
+	allocMgr = &AllocationManager{
+		config:  DefaultQuotaAllocation(),
+		dataDir: dir,
 	}
-	return credits
+	return allocMgr
 }
 
 // initTestMessages creates a MessageManager with isolated storage.
@@ -709,131 +708,114 @@ func TestReputation_Scoring(t *testing.T) {
 // 4. TestCredits_Balance
 // ===================================================================
 
-func TestCredits_Balance(t *testing.T) {
+// TestAllocation_Balance tests the v2.0 quota allocation system.
+func TestAllocation_Balance(t *testing.T) {
 	env := setupTestEnv(t)
 	dir := env.dir
 
-	// --- AddCredits ---
-	t.Run("AddCredits", func(t *testing.T) {
-		c := initTestCredits(t, dir)
-		c.AddCredits(100, "initial bonus", "mm-system")
-		if c.GetBalance() != 100 {
-			t.Fatalf("balance should be 100, got %d", c.GetBalance())
+	// --- Default allocation ---
+	t.Run("DefaultAllocation", func(t *testing.T) {
+		am := initTestAllocation(t, dir)
+		alloc := am.GetAllocation()
+		if alloc.FreeConsumerPercent != 50 {
+			t.Fatalf("default free_consumer_percent should be 50, got %d", alloc.FreeConsumerPercent)
 		}
-		c.AddCredits(50, "relay earning", "mm-node1")
-		if c.GetBalance() != 150 {
-			t.Fatalf("balance should be 150, got %d", c.GetBalance())
-		}
-	})
-
-	// --- SpendCredits success ---
-	t.Run("SpendCredits_success", func(t *testing.T) {
-		c := initTestCredits(t, dir)
-		c.AddCredits(200, "deposit", "")
-		ok := c.SpendCredits(50, "send_message", "mm-node2")
-		if !ok {
-			t.Fatal("SpendCredits should succeed with sufficient balance")
-		}
-		if c.GetBalance() != 150 {
-			t.Fatalf("balance should be 150, got %d", c.GetBalance())
+		if alloc.NetworkNodePercent != 50 {
+			t.Fatalf("default network_node_percent should be 50, got %d", alloc.NetworkNodePercent)
 		}
 	})
 
-	// --- SpendCredits insufficient balance ---
-	t.Run("SpendCredits_insufficient", func(t *testing.T) {
-		c := initTestCredits(t, dir)
-		c.AddCredits(10, "small deposit", "")
-		ok := c.SpendCredits(50, "expensive", "mm-node3")
-		if ok {
-			t.Fatal("SpendCredits should fail with insufficient balance")
+	// --- SetAllocation ---
+	t.Run("SetAllocation", func(t *testing.T) {
+		am := initTestAllocation(t, dir)
+		err := am.SetAllocation(70)
+		if err != nil {
+			t.Fatalf("SetAllocation should succeed: %v", err)
 		}
-		if c.GetBalance() != 10 {
-			t.Fatalf("balance should remain 10, got %d", c.GetBalance())
+		alloc := am.GetAllocation()
+		if alloc.FreeConsumerPercent != 70 {
+			t.Fatalf("free_consumer_percent should be 70, got %d", alloc.FreeConsumerPercent)
 		}
-	})
-
-	// --- SpendCredits daily cap ---
-	t.Run("SpendCredits_daily_cap", func(t *testing.T) {
-		c := initTestCredits(t, dir)
-		c.AddCredits(creditDailySpendCap+500, "big deposit", "")
-
-		// Spend up to near the cap
-		ok := c.SpendCredits(creditDailySpendCap-100, "bulk", "mm-node4")
-		if !ok {
-			t.Fatal("first spend should succeed")
-		}
-		// Now try to exceed the cap
-		ok = c.SpendCredits(200, "over_cap", "mm-node5")
-		if ok {
-			t.Fatal("SpendCredits should fail when exceeding daily cap")
+		if alloc.NetworkNodePercent != 30 {
+			t.Fatalf("network_node_percent should be 30, got %d", alloc.NetworkNodePercent)
 		}
 	})
 
-	// --- GetTransactions (most recent first) ---
-	t.Run("GetTransactions", func(t *testing.T) {
-		c := initTestCredits(t, dir)
-		c.AddCredits(100, "first", "")
-		c.AddCredits(200, "second", "")
-		c.AddCredits(300, "third", "")
-
-		txs := c.GetTransactions(10)
-		if len(txs) != 3 {
-			t.Fatalf("expected 3 transactions, got %d", len(txs))
+	// --- SetAllocation boundary: 0 ---
+	t.Run("SetAllocation_zero", func(t *testing.T) {
+		am := initTestAllocation(t, dir)
+		err := am.SetAllocation(0)
+		if err != nil {
+			t.Fatalf("SetAllocation(0) should succeed: %v", err)
 		}
-		// Most recent first
-		if txs[0].Reason != "third" {
-			t.Fatalf("first returned tx should be 'third', got %q", txs[0].Reason)
+		alloc := am.GetAllocation()
+		if alloc.FreeConsumerPercent != 0 {
+			t.Fatalf("free_consumer_percent should be 0, got %d", alloc.FreeConsumerPercent)
 		}
-		if txs[1].Reason != "second" {
-			t.Fatalf("second returned tx should be 'second', got %q", txs[1].Reason)
-		}
-		if txs[2].Reason != "first" {
-			t.Fatalf("third returned tx should be 'first', got %q", txs[2].Reason)
-		}
-
-		// Limit
-		txs2 := c.GetTransactions(2)
-		if len(txs2) != 2 {
-			t.Fatalf("expected 2 transactions with limit=2, got %d", len(txs2))
+		if alloc.NetworkNodePercent != 100 {
+			t.Fatalf("network_node_percent should be 100, got %d", alloc.NetworkNodePercent)
 		}
 	})
 
-	// --- GetBalance ---
-	t.Run("GetBalance", func(t *testing.T) {
-		c := initTestCredits(t, dir)
-		if c.GetBalance() != 0 {
-			t.Fatalf("initial balance should be 0, got %d", c.GetBalance())
+	// --- SetAllocation boundary: 100 ---
+	t.Run("SetAllocation_100", func(t *testing.T) {
+		am := initTestAllocation(t, dir)
+		err := am.SetAllocation(100)
+		if err != nil {
+			t.Fatalf("SetAllocation(100) should succeed: %v", err)
 		}
-		c.AddCredits(500, "deposit", "")
-		if c.GetBalance() != 500 {
-			t.Fatalf("balance should be 500, got %d", c.GetBalance())
+		alloc := am.GetAllocation()
+		if alloc.FreeConsumerPercent != 100 {
+			t.Fatalf("free_consumer_percent should be 100, got %d", alloc.FreeConsumerPercent)
 		}
-		c.SpendCredits(200, "spend", "")
-		if c.GetBalance() != 300 {
-			t.Fatalf("balance should be 300, got %d", c.GetBalance())
+		if alloc.NetworkNodePercent != 0 {
+			t.Fatalf("network_node_percent should be 0, got %d", alloc.NetworkNodePercent)
+		}
+	})
+
+	// --- SetAllocation invalid ---
+	t.Run("SetAllocation_invalid", func(t *testing.T) {
+		am := initTestAllocation(t, dir)
+		err := am.SetAllocation(-1)
+		if err == nil {
+			t.Fatal("SetAllocation(-1) should fail")
+		}
+		err = am.SetAllocation(101)
+		if err == nil {
+			t.Fatal("SetAllocation(101) should fail")
+		}
+	})
+
+	// --- RecordUsage ---
+	t.Run("RecordUsage", func(t *testing.T) {
+		am := initTestAllocation(t, dir)
+		am.RecordUsage(true, 1000)
+		am.RecordUsage(false, 2000)
+		stats := am.GetUsageStats()
+		if stats["used_free_tokens"] != int64(1000) {
+			t.Fatalf("used_free_tokens should be 1000, got %v", stats["used_free_tokens"])
+		}
+		if stats["used_network_tokens"] != int64(2000) {
+			t.Fatalf("used_network_tokens should be 2000, got %v", stats["used_network_tokens"])
 		}
 	})
 
 	// --- save / load persistence ---
 	t.Run("save_load", func(t *testing.T) {
-		c := initTestCredits(t, dir)
-		c.AddCredits(500, "deposit", "")
-		c.SpendCredits(100, "spend", "")
-		c.AddCredits(200, "bonus", "")
+		am := initTestAllocation(t, dir)
+		am.SetAllocation(80)
 
 		// New manager loading from same dir
-		c2 := &CreditsManager{
-			balance:      0,
-			transactions: []CreditTransaction{},
-			dataDir:      dir,
+		am2 := &AllocationManager{
+			config:  QuotaAllocation{},
+			dataDir: dir,
 		}
-		c2.load()
-		if c2.GetBalance() != 600 { // 500 - 100 + 200
-			t.Fatalf("loaded balance should be 600, got %d", c2.GetBalance())
+		am2.load()
+		if am2.config.FreeConsumerPercent != 80 {
+			t.Fatalf("loaded free_consumer_percent should be 80, got %d", am2.config.FreeConsumerPercent)
 		}
-		txs := c2.GetTransactions(10)
-		if len(txs) != 3 {
-			t.Fatalf("loaded transactions should be 3, got %d", len(txs))
+		if am2.config.NetworkNodePercent != 20 {
+			t.Fatalf("loaded network_node_percent should be 20, got %d", am2.config.NetworkNodePercent)
 		}
 	})
 }
@@ -850,11 +832,8 @@ func TestMessage_SendReceive(t *testing.T) {
 	t.Run("SendMessage_to_self", func(t *testing.T) {
 		initTestNode(t, dir)
 		initTestFederation(t, dir)
-		initTestCredits(t, dir)
+		initTestAllocation(t, dir)
 		m := initTestMessages(t, dir)
-
-		// Add credits so spending succeeds
-		credits.AddCredits(100, "test deposit", "")
 
 		// Register self in federation so GetNode succeeds
 		myID := node.NodeID()
@@ -888,20 +867,14 @@ func TestMessage_SendReceive(t *testing.T) {
 		if inbox[0].Signature == "" {
 			t.Fatal("message should have a signature")
 		}
-
-		// Credits should have been deducted
-		if credits.GetBalance() != 95 { // 100 - 5 (messageCost)
-			t.Fatalf("balance should be 95 after sending, got %d", credits.GetBalance())
-		}
 	})
 
 	// --- SendMessage: validation errors ---
 	t.Run("SendMessage_validation", func(t *testing.T) {
 		initTestNode(t, dir)
 		initTestFederation(t, dir)
-		initTestCredits(t, dir)
+		initTestAllocation(t, dir)
 		m := initTestMessages(t, dir)
-		credits.AddCredits(100, "deposit", "")
 
 		// Empty subject
 		err := m.SendMessage("mm-recipient", "", "body", "general")

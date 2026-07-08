@@ -160,19 +160,19 @@ type Provider struct {
 	UpdatedAt   string     `json:"updated_at,omitempty"`
 }
 
-// ProviderAccessControl defines which key types can access a provider.
+// ProviderAccessControl defines which key types can access a provider (v2.0).
 type ProviderAccessControl struct {
-	// AllowPrivateKey allows mk_{consumer_id}.xxx keys (default true)
-	AllowPrivateKey bool `json:"allow_private_key"`
-	// AllowSharedKey allows mk_open_xxx keys (default false)
-	AllowSharedKey bool `json:"allow_shared_key"`
+	// AllowGuest allows sk-guest-* keys (default true)
+	AllowGuest bool `json:"allow_guest"`
+	// AllowPublic allows mk_public_v1 key (default false)
+	AllowPublic bool `json:"allow_public"`
 }
 
-// DefaultAccessControl returns the default access control settings.
+// DefaultAccessControl returns the default access control settings for v2.0.
 func DefaultAccessControl() ProviderAccessControl {
 	return ProviderAccessControl{
-		AllowPrivateKey: true,
-		AllowSharedKey:  false,
+		AllowGuest:  true,
+		AllowPublic: false,
 	}
 }
 

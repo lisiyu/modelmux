@@ -54,8 +54,7 @@ func main() {
 		"data/admin.json",
 		"data/providers.json",
 		"data/sider_token_status.json",
-		"data/issued_keys.json",
-		"data/open_keys.json",
+		"data/guest_keys.json",
 		"data/invite_store.json",
 	})
 
@@ -65,7 +64,7 @@ func main() {
 	initFederation("data")
 	initGossip()
 	initReputation("data")
-	initCredits("data")
+	initAllocationManager("data")
 	initMessages("data")
 	initNodeWeightManager("data")
 	initInviteManager("data")
@@ -89,11 +88,8 @@ func main() {
 	initNetworkManager("data")
 	netMgr.Init()
 
-	// Initialize signed key store (Phase 2)
-	initKeyStore("data")
-
-	// Initialize open key store (Phase 2 Economic Model)
-	initOpenKeyStore("data")
+	// Initialize guest key store (v2.0)
+	initGuestKeyStore("data")
 
 	// Initialize algorithm chain & quota manager (Phase 3)
 	initAlgorithmChain("data")
@@ -101,7 +97,7 @@ func main() {
 
 	// Initialize global pool & global key store (Phase 4)
 	initGlobalPool("data")
-	initGlobalKeyStore("data")
+	// v2.0: global key store removed (mk_public_v1 is a fixed constant)
 
 	// Initialize Phase 4: Region manager & Balance engine
 	initRegionManager()
@@ -123,13 +119,13 @@ func main() {
 		registerWithBootstraps()
 	}()
 
-	// Periodic key store save (Phase 2)
+	// Periodic guest key store save (v2.0)
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			if keyStore != nil {
-				keyStore.SaveAsync()
+			if guestKeyStore != nil {
+				guestKeyStore.save()
 			}
 		}
 	}()
@@ -283,8 +279,9 @@ func main() {
 	mux.HandleFunc("POST /api/federation/relay", rateLimitByIP(60, "federation_relay")(handleRelayRequest)) // SA-10
 	mux.HandleFunc("GET /api/federation/reputations", handleGetReputations)
 	mux.HandleFunc("POST /api/federation/score", withAuth(handlePostScore))
-	mux.HandleFunc("GET /api/federation/credits", withAuth(handleGetCredits))
-	mux.HandleFunc("GET /api/federation/credits/history", withAuth(handleGetCreditHistory))
+	// v2.0: Quota allocation (replaces old credits system)
+	mux.HandleFunc("GET /api/network/quota-allocation", handleGetQuotaAllocation)
+	mux.HandleFunc("PUT /api/network/quota-allocation", withAuth(handleUpdateQuotaAllocation))
 	mux.HandleFunc("POST /api/federation/messages/send", withAuth(handleSendMessage))
 	mux.HandleFunc("GET /api/federation/messages/inbox", withAuth(handleGetInbox))
 	mux.HandleFunc("GET /api/federation/messages/outbox", withAuth(handleGetOutbox))
@@ -317,20 +314,12 @@ func main() {
 	mux.HandleFunc("GET /api/network/resolve/{id}", handleNetworkResolve)
 	mux.HandleFunc("GET /api/network/routes", withAuth(handleNetworkRoutes))
 
-	// P2P Signed Keys (Phase 2)
-	mux.HandleFunc("POST /api/network/keys/issue", withAuth(handleNetworkKeyIssue))
-	mux.HandleFunc("GET /api/network/keys", withAuth(handleNetworkKeyList))
-	mux.HandleFunc("DELETE /api/network/keys/{consumer_id}", withAuth(handleNetworkKeyRevoke))
-	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate)) // SA-10
-	mux.HandleFunc("GET /api/network/contributions", withAuth(handleNetworkContributions))
-
-	// Phase 2 Economic Model — Trial Pool & Open Keys
-	mux.HandleFunc("GET /api/network/trial", withAuth(handleNetworkTrialPool))
-	mux.HandleFunc("POST /api/network/trial/issue", withAuth(handleNetworkTrialIssue))
-	mux.HandleFunc("GET /api/network/open-keys", withAuth(handleNetworkOpenKeys))
-	mux.HandleFunc("POST /api/network/open-keys/unbound", withAuth(handleNetworkOpenKeyUnboundIssue))
-	mux.HandleFunc("POST /api/network/open-keys/bound", withAuth(handleNetworkOpenKeyBoundIssue))
-	mux.HandleFunc("GET /api/network/unlock-status", withAuth(handleNetworkUnlockStatus))
+	// v2.0 Guest Keys
+	mux.HandleFunc("POST /api/network/guest-keys", withAuth(handleGuestKeyIssue))
+	mux.HandleFunc("GET /api/network/guest-keys", withAuth(handleGuestKeyList))
+	mux.HandleFunc("DELETE /api/network/guest-keys/{key}", withAuth(handleGuestKeyRevoke))
+	mux.HandleFunc("POST /api/network/keys/validate", rateLimitByIP(30, "key_validate")(handleNetworkKeyValidate))
+	// v2.0: unlock-status removed (no more unlock mechanism)
 
 	// Node Heartbeat & Discovery (Phase 2)
 	mux.HandleFunc("POST /api/network/heartbeat", rateLimitByIP(30, "heartbeat")(handleNetworkHeartbeat)) // SA-10
@@ -354,9 +343,7 @@ func main() {
 	mux.HandleFunc("POST /api/network/global-pool/contribute", withAuth(handleGlobalPoolContribute))
 	mux.HandleFunc("GET /api/network/global-pool/nodes", handleGlobalPoolNodes)
 	mux.HandleFunc("GET /api/network/global-pool/stats", handleGlobalPoolStats)
-	mux.HandleFunc("POST /api/network/global-keys/issue", withAuth(handleGlobalKeyIssue))
-	mux.HandleFunc("GET /api/network/global-keys", withAuth(handleGlobalKeyList))
-	mux.HandleFunc("DELETE /api/network/global-keys/{index}", withAuth(handleGlobalKeyRevoke))
+	// v2.0: global key routes removed (mk_public_v1 is a fixed constant)
 
 	// Dynamic Load Balancer (Phase 4)
 	mux.HandleFunc("GET /api/network/loadbalancer/status", handleLBStatus)
@@ -519,11 +506,21 @@ func isOriginAllowed(origin, whitelist string) bool {
 }
 
 // withProxyAuth authenticates v1 proxy endpoints.
-// Accepts: admin proxy API key (owner="") or consumer API key (owner=consumer_id).
+// Accepts: mk_public_v1 (public trial), admin proxy API key (owner=""), or consumer API key.
 // If no proxy API key is set and no consumer key matches, allows anonymous access as admin.
 func withProxyAuth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			key := authHeader[7:]
+			// v2.0: mk_public_v1 — global public trial key, always accepted
+			if key == PublicKeyValue {
+				r.Header.Set("X-Request-Owner", "")
+				r.Header.Set("X-Request-Role", "public")
+				handler(w, r)
+				return
+			}
+		}
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			// No auth header - check if proxy key is required
 			proxyKey := cfg.Get("proxy_api_key", "")
@@ -724,11 +721,8 @@ func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if credits != nil {
-		status["credits"] = map[string]any{
-			"balance":     credits.GetBalance(),
-			"transactions": len(credits.transactions),
-		}
+	if allocMgr != nil {
+		status["quota_allocation"] = allocMgr.GetUsageStats()
 	}
 
 	if msgMgr != nil {

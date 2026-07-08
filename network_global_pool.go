@@ -1,9 +1,6 @@
 package main
 
 import (
-	crypto_rand "crypto/rand"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -602,86 +599,19 @@ func (gks *globalKeyStore) doSave() {
 	os.WriteFile(gks.dataPath, b, 0600)
 }
 
-// IssueGlobalKey creates a new global key that can access any node in the pool.
-// Format: mk_open_global_{node_id}_{random}.{payload_b64}.{sig_hex}
+// IssueGlobalKey is deprecated in v2.0. The public key is now a fixed constant (mk_public_v1).
+// This function is kept as a stub for backward compatibility.
 func (gks *globalKeyStore) IssueGlobalKey(quota int64) (string, *GlobalKeyInfo, error) {
-	if node == nil || !node.IsInitialized() {
-		return "", nil, fmt.Errorf("node identity not initialized")
-	}
-	if globalPool == nil {
-		return "", nil, fmt.Errorf("global pool not initialized")
-	}
-
-	// Verify this node can sign global keys
-	selfNodeID := ""
-	if netMgr != nil {
-		selfNodeID = netMgr.GetNodeID()
-	}
-	if selfNodeID == "" {
-		return "", nil, fmt.Errorf("node identity not available")
-	}
-
-	canSign, contrib, threshold := globalPool.CanSignGlobalKey(selfNodeID)
-	if !canSign {
-		return "", nil, fmt.Errorf("insufficient contribution: have %d, need %d", contrib, threshold)
-	}
-
-	if quota <= 0 {
-		quota = globalKeyDefaultQuota
-	}
-
-	now := time.Now()
-	randBytes := make([]byte, 16)
-	if _, err := crypto_rand.Read(randBytes); err != nil {
-		return "", nil, fmt.Errorf("failed to generate random bytes: %w", err)
-	}
-	randHex := hex.EncodeToString(randBytes)
-	consumerID := fmt.Sprintf("global_%s_%s", selfNodeID, randHex)
-
-	payload := KeyPayload{
-		Sub:    consumerID,
-		Iss:    selfNodeID,
-		Quota:  quota,
-		Used:   0,
-		Models: []string{}, // all models allowed
-		Iat:    now.Unix(),
-		Exp:    now.Add(time.Duration(globalKeyExpDays) * 24 * time.Hour).Unix(),
-	}
-
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", nil, fmt.Errorf("marshal payload: %w", err)
-	}
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	sigHex := node.SignHex([]byte(payloadB64))
-	if sigHex == "" {
-		return "", nil, fmt.Errorf("node private key not available")
-	}
-
-	fullKey := fmt.Sprintf("mk_open_global_%s_%s.%s.%s", selfNodeID, randHex, payloadB64, sigHex)
-
+	// v2.0: Return the fixed public key constant
 	info := &GlobalKeyInfo{
-		Key:        fullKey,
-		IssuerNode: selfNodeID,
-		Quota:      quota,
+		Key:        PublicKeyValue,
+		IssuerNode: "system",
+		Quota:      0,
 		Used:       0,
-		IssuedAt:   now.Format(time.RFC3339),
+		IssuedAt:   time.Now().Format(time.RFC3339),
 		Active:     true,
 	}
-
-	gks.mu.Lock()
-	gks.keys = append(gks.keys, info)
-	gks.mu.Unlock()
-	gks.save()
-
-	slog.Info("issued global key",
-		"issuer", selfNodeID,
-		"quota", quota,
-		"key", fullKey[:min(len(fullKey), 30)]+"...",
-	)
-
-	return fullKey, info, nil
+	return PublicKeyValue, info, nil
 }
 
 // GetActiveGlobalKeys returns all active global keys.

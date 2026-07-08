@@ -68,65 +68,33 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Phase 2: Check key-based routing restrictions
+	// v2.0: Check key-based routing restrictions
 	authHeader := r.Header.Get("Authorization")
-	// SA-05: Validate open key signatures at relay entry point
-	if strings.HasPrefix(authHeader, "Bearer mk_open_") {
-		openKey := strings.TrimPrefix(authHeader, "Bearer ")
-		if _, err := ValidateKey(openKey); err != nil {
-			writeError(w, 401, "invalid open key signature")
-			slog.Warn("relay rejected open key with invalid signature", "node_id", targetNodeID)
+	bearerKey := strings.TrimPrefix(authHeader, "Bearer ")
+
+	switch ClassifyKey(bearerKey) {
+	case KeyTypePublic:
+		// mk_public_v1 → only route to nodes that joined the network shared pool
+		// (any node in the network can serve public key requests)
+
+	case KeyTypeGuest:
+		// sk-guest-{node_id}.{random} → route to the issuing node
+		guestNodeID, valid := ValidateGuestKey(bearerKey)
+		if !valid {
+			writeError(w, 401, "invalid guest key")
 			return
 		}
-	}
-	if strings.HasPrefix(authHeader, "Bearer mk_trial_") {
-		// Trial keys can ONLY route back to the issuer node
-		issuerNodeID := extractTrialKeyIssuer(authHeader)
-		if issuerNodeID != "" && targetNodeID != issuerNodeID {
-			writeError(w, 403, "trial keys can only access the issuing node")
+		if guestNodeID != "" && targetNodeID != guestNodeID {
+			writeError(w, 403, "guest keys can only access the issuing node")
 			return
 		}
-	} else if strings.HasPrefix(authHeader, "Bearer mk_open_") {
-		// Open key routing logic
-		keyType := ClassifyKey(strings.TrimPrefix(authHeader, "Bearer "))
-		if keyType == KeyTypeOpenUnbound {
-			// Unbound open keys: only route to the node that issued them
-			// (they're trial-like, limited scope)
-			issuerNodeID := extractOpenKeyIssuer(authHeader)
-			if issuerNodeID != "" && targetNodeID != issuerNodeID {
-				writeError(w, 403, "unbound open keys can only access the issuing node")
-				return
-			}
-		} else if keyType == KeyTypeOpenBound {
-			// Bound open keys: can access all nodes, but require the bound node to be unlocked
-			issuerNodeID := extractOpenBoundKeyNodeID(authHeader)
-			if issuerNodeID != "" && targetNodeID != issuerNodeID {
-				if !netMgr.IsNodeUnlocked(issuerNodeID) {
-					writeError(w, 403, "node not yet unlocked — must contribute first to access network resources")
-					return
-				}
-			}
-		} else if keyType == KeyTypeGlobal {
-			// Global keys: can route to ANY node in the global pool
-			// No restriction on target node — global pool handles routing
-			if globalPool == nil {
-				writeError(w, 503, "global pool not available")
-				return
-			}
-		}
-	} else if strings.HasPrefix(authHeader, "Bearer mk_") {
-		// Standard signed keys: check if issuer node is unlocked
-		mkKey := strings.TrimPrefix(authHeader, "Bearer ")
-		payload, err := ValidateKey(mkKey)
-		if err == nil && payload != nil {
-			issuerNodeID := payload.Iss
-			if issuerNodeID != "" && targetNodeID != issuerNodeID {
-				if !netMgr.IsNodeUnlocked(issuerNodeID) {
-					writeError(w, 403, "issuer node not yet unlocked — must contribute first to access network resources")
-					return
-				}
-			}
-		}
+
+	case KeyTypeProxy:
+		// sk-{random} → Proxy API Key, can route to any node if the owner joined the network
+		// No specific restriction at relay level
+
+	default:
+		// Unknown key type — allow relay (will be validated at destination)
 	}
 
 	// If the target is ourselves, handle locally
@@ -134,14 +102,6 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 	if targetNodeID == selfID {
 		handleRelayToLocal(w, r, parts, hopCount)
 		return
-	}
-
-	// Phase 2: Check if target node is unlocked (for non-trial keys)
-	if !strings.HasPrefix(authHeader, "Bearer mk_trial_") {
-		if !netMgr.IsNodeUnlocked(targetNodeID) {
-			// Target node exists but is not unlocked - still allow routing but note it
-			slog.Debug("routing to locked node", "target", targetNodeID)
-		}
 	}
 
 	// Resolve target node in route table
@@ -165,229 +125,39 @@ func handleNetworkRelay(w http.ResponseWriter, r *http.Request) {
 	relayToRemote(w, r, entry, parts, hopCount)
 }
 
-// extractTrialKeyIssuer extracts the issuer node_id from a trial key
-func extractTrialKeyIssuer(authHeader string) string {
-	// Format: Bearer mk_trial_{node_id}_{timestamp}.{payload}.{sig}
-	key := strings.TrimPrefix(authHeader, "Bearer ")
-	rest := strings.TrimPrefix(key, "mk_trial_")
-	// node_id is before the first underscore after the prefix... actually:
-	// Format: mk_trial_{node_id}_{timestamp}...
-	// node_id starts with mmx- and contains 32 hex chars
-	// So: mk_trial_mmx-XXXXX_YYYYY.payload.sig
-	parts := strings.SplitN(rest, ".", 2)
-	if len(parts) == 0 {
-		return ""
-	}
-	prefix := parts[0]
-	// Find the last underscore which separates node_id from timestamp
-	lastUnderscore := strings.LastIndex(prefix, "_")
-	if lastUnderscore <= 0 {
-		return ""
-	}
-	nodeID := prefix[:lastUnderscore]
-	// Verify it looks like a node ID
-	if strings.HasPrefix(nodeID, p2pNodeIDPrefix) {
-		return nodeID
-	}
-	return ""
-}
-
-// extractOpenKeyIssuer extracts the issuer node_id from an open key (for unbound)
-func extractOpenKeyIssuer(authHeader string) string {
-	// Unbound: mk_open_{random}.{payload}.{sig}
-	// No node_id in the key — returns "" meaning no issuer restriction
-	// The validation happens at the target node
-	return ""
-}
-
-// extractOpenBoundKeyNodeID extracts the bound node_id from a bound open key
-func extractOpenBoundKeyNodeID(authHeader string) string {
-	// Bound: mk_open_{node_id}_{random}.{payload}.{sig}
-	key := strings.TrimPrefix(authHeader, "Bearer ")
-	rest := strings.TrimPrefix(key, "mk_open_")
-	parts := strings.SplitN(rest, ".", 2)
-	if len(parts) == 0 {
-		return ""
-	}
-	prefix := parts[0]
-	// Try to find node_id pattern (mmx-...)
-	if idx := strings.Index(prefix, "mmx-"); idx >= 0 {
-		// node_id is from mmx- to the next underscore
-		remaining := prefix[idx:]
-		endIdx := strings.Index(remaining, "_")
-		if endIdx > 0 {
-			nodeID := remaining[:endIdx]
-			if strings.HasPrefix(nodeID, p2pNodeIDPrefix) {
-				return nodeID
-			}
-		}
-	}
-	return ""
-}
-
 // handleRelayToLocal handles requests targeting this node itself
 // Strips /network/{node_id} prefix and serves the remaining path locally
 func handleRelayToLocal(w http.ResponseWriter, r *http.Request, parts []string, hopCount int) {
 	netMgr.RecordReceived()
 
-	// Phase 2: Validate mk_ signed keys if present
+	// v2.0: Simplified key handling for local relay
 	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer mk_") {
-		mkKey := strings.TrimPrefix(authHeader, "Bearer ")
-		keyType := ClassifyKey(mkKey)
+	bearerKey := strings.TrimPrefix(authHeader, "Bearer ")
+	keyType := ClassifyKey(bearerKey)
 
-		// Determine the model from the path for access check
-		model := extractModelFromPath(r.URL.Path)
+	switch keyType {
+	case KeyTypePublic:
+		// mk_public_v1 — no additional validation needed
+		r.Header.Set("X-MK-KeyType", "public")
 
-		switch keyType {
-		case KeyTypeTrial:
-			// Trial key: validate signature and apply 2x contribution
-			payload, err := ValidateKey(mkKey)
-			if err != nil {
-				slog.Warn("trial key validation failed", "error", err, "path", r.URL.Path)
-				writeError(w, 401, fmt.Sprintf("trial key invalid: %v", err))
-				return
-			}
-			// Record usage with 2x contribution (trial incentive)
-			if keyStore != nil {
-				keyStore.RecordUsage(payload.Sub)
-			}
-			RecordContribution(payload.Iss, 2) // 2x for trial
-			slog.Info("trial key validated", "consumer_id", payload.Sub, "issuer", payload.Iss, "model", model)
-
-			r.Header.Del("Authorization")
-			r.Header.Set("X-MK-Consumer", payload.Sub)
-			r.Header.Set("X-MK-Issuer", payload.Iss)
-			r.Header.Set("X-MK-KeyType", "trial")
-
-		case KeyTypeOpenUnbound:
-			// Open unbound: validate and record usage
-			payload, err := ValidateKey(mkKey)
-			if err != nil {
-				slog.Warn("open unbound key validation failed", "error", err)
-				writeError(w, 401, fmt.Sprintf("open key invalid: %v", err))
-				return
-			}
-			// Record usage
-			if openKeys != nil {
-				openKeys.RecordOpenKeyUsage(payload.Sub)
-			}
-			if keyStore != nil {
-				keyStore.RecordUsage(payload.Sub)
-			}
-			slog.Info("open unbound key validated", "consumer_id", payload.Sub, "model", model)
-
-			r.Header.Del("Authorization")
-			r.Header.Set("X-MK-Consumer", payload.Sub)
-			r.Header.Set("X-MK-KeyType", "open_unbound")
-
-		case KeyTypeOpenBound:
-			// Open bound: validate and check unlock status
-			payload, err := ValidateKey(mkKey)
-			if err != nil {
-				slog.Warn("open bound key validation failed", "error", err)
-				writeError(w, 401, fmt.Sprintf("open bound key invalid: %v", err))
-				return
-			}
-			// Check if bound node is unlocked (for cross-node access)
-			if payload.Iss != "" && !netMgr.IsNodeUnlocked(payload.Iss) {
-				slog.Warn("open bound key node not unlocked", "node_id", payload.Iss)
-				writeError(w, 403, "bound node not yet unlocked")
-				return
-			}
-			// Check reputation degradation (rep < 50 → degrade to unbound)
-			if repMgr != nil {
-				rep := repMgr.GetReputation(payload.Iss)
-				if rep != nil && rep.OverallScore < 50 {
-					slog.Warn("open bound key degraded due to low reputation", "node_id", payload.Iss, "score", rep.OverallScore)
-					// Allow but mark as degraded
-					r.Header.Set("X-MK-Degrad", "true")
-				}
-			}
-			if openKeys != nil {
-				openKeys.RecordOpenKeyUsage(payload.Sub)
-			}
-			if keyStore != nil {
-				keyStore.RecordUsage(payload.Sub)
-			}
-			slog.Info("open bound key validated", "consumer_id", payload.Sub, "issuer", payload.Iss, "model", model)
-
-			r.Header.Del("Authorization")
-			r.Header.Set("X-MK-Consumer", payload.Sub)
-			r.Header.Set("X-MK-Issuer", payload.Iss)
-			r.Header.Set("X-MK-KeyType", "open_bound")
-
-		case KeyTypeGlobal:
-			// Global key: validate and record consumption against global pool
-			payload, err := ValidateKey(mkKey)
-			if err != nil {
-				slog.Warn("global key validation failed", "error", err)
-				writeError(w, 401, fmt.Sprintf("global key invalid: %v", err))
-				return
-			}
-			// Verify issuer is a global pool participant
-			if globalPool != nil && payload.Iss != "" {
-				_, contrib, _ := globalPool.CanSignGlobalKey(payload.Iss)
-				if contrib <= 0 {
-					slog.Warn("global key issuer not in pool", "issuer", payload.Iss)
-					writeError(w, 403, "global key issuer not in pool")
-					return
-				}
-			}
-			// Record usage in global key store
-			if globalKeys != nil {
-				for _, gk := range globalKeys.GetActiveGlobalKeys() {
-					if gk.Key == mkKey {
-						gk.Used++
-						break
-					}
-				}
-			}
-			// Record consumption in global pool
-			if globalPool != nil {
-				globalPool.RecordConsumption(payload.Iss, 1)
-			}
-			slog.Info("global key validated", "consumer_id", payload.Sub, "issuer", payload.Iss, "model", model)
-
-			r.Header.Del("Authorization")
-			r.Header.Set("X-MK-Consumer", payload.Sub)
-			r.Header.Set("X-MK-Issuer", payload.Iss)
-			r.Header.Set("X-MK-KeyType", "global")
-
-		default:
-			// Standard signed key
-			payload, err := ValidateKey(mkKey)
-			if err != nil {
-				slog.Warn("signed key validation failed", "error", err, "path", r.URL.Path)
-				writeError(w, 401, fmt.Sprintf("signed key invalid: %v", err))
-				return
-			}
-
-			// Check model access
-			if model != "" && !CheckModelAccess(payload, model) {
-				slog.Warn("signed key model access denied", "model", model, "allowed", payload.Models)
-				writeError(w, 403, fmt.Sprintf("model '%s' not allowed by this key", model))
-				return
-			}
-
-			// Record usage
-			if keyStore != nil {
-				keyStore.RecordUsage(payload.Sub)
-			}
-
-			// Record contribution
-			RecordContribution(payload.Iss, 0)
-
-			slog.Info("signed key validated", "consumer_id", payload.Sub, "issuer", payload.Iss, "model", model)
-
-			// Clear the mk_ auth header so it doesn't interfere with local serving
-			r.Header.Del("Authorization")
-			r.Header.Set("X-MK-Consumer", payload.Sub)
-			r.Header.Set("X-MK-Issuer", payload.Iss)
+	case KeyTypeGuest:
+		// sk-guest-{node_id}.{random}
+		nodeID, valid := ValidateGuestKey(bearerKey)
+		if !valid {
+			writeError(w, 401, "invalid guest key")
+			return
 		}
-	} else if strings.HasPrefix(authHeader, "Bearer sk_") {
-		// sk_ keys: keep original behavior (pass through as consumer key)
-		// No additional validation needed here
+		r.Header.Del("Authorization")
+		r.Header.Set("X-MK-KeyType", "guest")
+		r.Header.Set("X-MK-Guest-Node", nodeID)
+		slog.Info("guest key validated for local relay", "node_id", nodeID)
+
+	case KeyTypeProxy:
+		// sk-{random} — proxy API key, pass through
+		r.Header.Set("X-MK-KeyType", "proxy")
+
+	default:
+		// Unknown key — pass through, let the local handler validate
 	}
 
 	// Reconstruct path without the /network/{node_id} prefix

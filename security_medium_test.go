@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,23 +19,40 @@ import (
 // SA-09: Error message sanitization tests
 // ============================================================
 
-func TestSA09_ValidateKeyPartsGenericErrors(t *testing.T) {
-	// Test that expired keys return generic "invalid key" error
-	// (not the exact expiration timestamp)
-	_, err := validateKeyParts("test_consumer", "invalid_payload", "0000")
-	if err == nil {
-		t.Fatal("expected error for invalid payload")
+func TestSA09_ValidateKeyGenericErrors(t *testing.T) {
+	// Test that key classification handles invalid keys without leaking details
+	// v2.0: keys are classified by prefix, no complex signature verification
+	tests := []struct {
+		key      string
+		expected KeyType
+	}{
+		{"mk_public_v1", KeyTypePublic},
+		{"sk-guest-mmx-abc123.def456", KeyTypeGuest},
+		{"sk-test-proxy-key", KeyTypeProxy},
+		{"invalid-key-format", KeyTypeUnknown},
+		{"", KeyTypeUnknown},
 	}
-	errMsg := err.Error()
-	// Should not contain detailed info like "expired at 1234567890"
-	if strings.Contains(errMsg, "expired at") {
-		t.Errorf("error message should not contain expiration timestamp: %s", errMsg)
+
+	for _, tc := range tests {
+		result := ClassifyKey(tc.key)
+		if result != tc.expected {
+			t.Errorf("ClassifyKey(%q) = %q, want %q", tc.key, result, tc.expected)
+		}
 	}
-	if strings.Contains(errMsg, "quota exhausted") {
-		t.Errorf("error message should not contain quota details: %s", errMsg)
+
+	// Test that guest key validation doesn't leak internal details
+	nodeID, valid := ValidateGuestKey("sk-guest-mmx-abc.def")
+	if !valid {
+		t.Error("valid format guest key should pass")
 	}
-	if strings.Contains(errMsg, "revoked") {
-		t.Errorf("error message should not reveal revocation status: %s", errMsg)
+	if nodeID != "mmx-abc" {
+		t.Errorf("node_id should be 'mmx-abc', got %q", nodeID)
+	}
+
+	// Invalid guest key format
+	_, valid = ValidateGuestKey("sk-guest-")
+	if valid {
+		t.Error("invalid guest key format should fail")
 	}
 }
 

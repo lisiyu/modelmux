@@ -155,7 +155,14 @@ select.form-input{appearance:none;cursor:pointer}
 
     <!-- 域名绑定引导 -->
     <div id="domainBindingQuickCard" style="display:none;margin-bottom:16px;padding:12px;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(178,75,243,.06));border:1px solid rgba(108,99,255,.2);border-radius:10px">
-
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--text-primary)">🔗 绑定域名获取固定地址</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">当前使用随机隧道地址，重启后会变化。绑定域名后获得永久固定 URL。</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="scrollToDomainBinding()" style="flex-shrink:0">去绑定 →</button>
+      </div>
+    </div>
 
     <div class="form-group"><label class="form-label">Proxy API Key</label>
       <div style="display:flex;gap:8px">
@@ -1830,6 +1837,17 @@ function initApiUrls() {
   });
 }
 
+function scrollToDomainBinding() {
+  const section = document.getElementById('domainBindingSection');
+  if (section) {
+    section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    section.style.transition = 'box-shadow 0.3s';
+    section.style.boxShadow = '0 0 0 2px rgba(108,99,255,.5)';
+    setTimeout(() => { section.style.boxShadow = 'none'; }, 2000);
+  }
+}
+// copyApiUrl removed — use copyText() directly
+
 function copyPersonalLanUrl() {
   const el = document.getElementById('personalLanUrl');
   if (el) { el.select(); document.execCommand('copy'); toast('已复制局域网地址'); }
@@ -1837,6 +1855,10 @@ function copyPersonalLanUrl() {
 function copyPersonalPublicUrl() {
   const el = document.getElementById('personalPublicUrl');
   if (el) { el.select(); document.execCommand('copy'); toast('已复制公网地址'); }
+}
+function copyP2PUrl() {
+  const el = document.getElementById('netP2PUrl');
+  if (el) { el.select(); document.execCommand('copy'); toast('已复制 P2P 网络地址'); }
 }
 
 // Set personal API access URLs
@@ -3073,9 +3095,41 @@ if (authToken) {
         const personalSection = document.getElementById('personalModeSection');
         if (personalSection) personalSection.style.display = 'none';
 
+        // Set P2P unified address (both the top card and the lower section)
+        const globalUrlEl = document.getElementById('netGlobalUrl');
+        if (globalUrlEl && s.node_id) {
+          globalUrlEl.value = 'mmx://' + s.node_id;
+        }
+        const p2pUrlEl = document.getElementById('netP2PUrl');
+        if (p2pUrlEl && s.node_id) {
+          p2pUrlEl.value = 'mmx://' + s.node_id;
+        }
 
+        // Set network public key in the top card
+        const pubKeyEl = document.getElementById('netPublicKey');
+        if (pubKeyEl) {
+          pubKeyEl.value = s.public_key || '';
+          if (!s.public_key) {
+            pubKeyEl.placeholder = '加入网络后自动生成';
+          }
+        }
 
-
+        // Set global key dynamic quota info
+        setText('netGlobalKeyMyContrib', s.contrib_points || 0);
+        if (s.network_weight !== undefined) {
+          setText('netGlobalKeyMyWeight', (s.network_weight || 0).toFixed(2));
+        }
+        // Dynamic quota display
+        const quotaEl = document.getElementById('netGlobalKeyQuota');
+        if (quotaEl) {
+          const cp = s.contrib_points || 0;
+          if (cp > 0) {
+            quotaEl.textContent = (cp * 10).toLocaleString() + ' tokens';
+          } else {
+            quotaEl.textContent = '需先积累贡献积分';
+            quotaEl.style.color = 'var(--text-muted)';
+          }
+        }
 
         // Fill status fields
         setText('netNodeName', s.node_name || '-');

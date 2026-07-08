@@ -671,15 +671,15 @@ func handleUpdateProviderAccessControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize: if both false, default to private-only
-	if !ac.AllowPrivateKey && !ac.AllowSharedKey {
+	// Normalize: if both false, default to guest-only
+	if !ac.AllowGuest && !ac.AllowPublic {
 		ac = DefaultAccessControl()
 	}
 
 	p.AccessControl = ac
 	pm.Add(p)
 
-	slog.Info("provider access control updated", "provider", id, "allow_private", ac.AllowPrivateKey, "allow_shared", ac.AllowSharedKey)
+	slog.Info("provider access control updated", "provider", id, "allow_guest", ac.AllowGuest, "allow_public", ac.AllowPublic)
 	writeJSON(w, 200, map[string]any{"success": true, "access_control": ac})
 }
 

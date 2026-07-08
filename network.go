@@ -58,11 +58,13 @@ type NetworkConfig struct {
 	LastAddressUpdate string          `json:"last_address_update"`
 	RelayEnabled      bool            `json:"relay_enabled"`
 
-	// Phase 2 Economic Model
-	TrialPool         TrialPool                       `json:"trial_pool"`
+	// Phase 2 Economic Model (legacy, kept for backward compat)
 	NodeUnlockStates  map[string]*NodeUnlockState     `json:"node_unlock_states"`
 
-	// Auto-generated public key for the network (mk_open_global_... format)
+	// v2.0 Quota Allocation
+	QuotaAllocation   QuotaAllocation                 `json:"quota_allocation"`
+
+	// Public keys (legacy field, kept for backward compat)
 	PublicKeys        []string                        `json:"public_keys"`
 }
 
@@ -276,8 +278,9 @@ func (nm *NetworkManager) load() {
 	if nm.config.NodeUnlockStates == nil {
 		nm.config.NodeUnlockStates = make(map[string]*NodeUnlockState)
 	}
-	if nm.config.TrialPool.TrialKeys == nil {
-		nm.config.TrialPool.TrialKeys = make([]*TrialKeyInfo, 0)
+	// v2.0: Initialize quota allocation with defaults if not set
+	if nm.config.QuotaAllocation.FreeConsumerPercent == 0 && nm.config.QuotaAllocation.NetworkNodePercent == 0 {
+		nm.config.QuotaAllocation = DefaultQuotaAllocation()
 	}
 }
 
@@ -425,32 +428,17 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 		Progress: 1.0,
 	}
 
-	// Auto-generate global public key if not already present
-	if len(nm.config.PublicKeys) == 0 {
-		pk, err := GenerateGlobalPublicKey(nm.config.NodeID)
-		if err != nil {
-			slog.Warn("failed to generate global public key", "error", err)
-		} else {
-			nm.config.PublicKeys = []string{pk}
-			slog.Info("auto-generated global public key for network", "node_id", nm.config.NodeID)
-		}
-	}
+	// v2.0: Public key is now a fixed constant (mk_public_v1), no generation needed
 
 	nm.doSave()
 
 	go nm.registerSelf()
 	nm.startRefreshLoop()
 
-	// Auto-create trial pool for new nodes (Phase 2)
+	// v2.0: Log network join
 	go func() {
-		time.Sleep(2 * time.Second) // wait for registration
-		if keyStore != nil && len(nm.config.TrialPool.TrialKeys) == 0 {
-			if err := nm.CreateTrialPoolForNode(nm.config.NodeID, DefaultTrialQuota); err != nil {
-				slog.Warn("failed to create trial pool", "error", err)
-			} else {
-				slog.Info("trial pool created for node", "node_id", nm.config.NodeID)
-			}
-		}
+		time.Sleep(2 * time.Second)
+		slog.Info("network node active", "node_id", nm.config.NodeID)
 	}()
 
 	slog.Info("shared network enabled", "node_id", nm.config.NodeID, "name", nm.config.NodeName)
@@ -531,8 +519,8 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		"relay_consumer_url": relayURL,
 		"route_table_size":   routeTable.Count(),
 
-		// Phase 2 Economic Model
-		"trial_pool_count":  len(nm.config.TrialPool.TrialKeys),
+		// v2.0 Quota Allocation
+		"quota_allocation":  nm.config.QuotaAllocation,
 		"unlock_states":     len(nm.config.NodeUnlockStates),
 
 		// Auto-generated public key
@@ -955,11 +943,6 @@ func handleNetworkRoutes(w http.ResponseWriter, r *http.Request) {
 // Phase 2 Economic Model — Trial Pool & Node Unlock
 // ============================================================
 
-// TrialPool stores trial key information per node
-type TrialPool struct {
-	TrialKeys []*TrialKeyInfo `json:"trial_keys"`
-}
-
 // NodeUnlockState tracks a node's unlock progress
 type NodeUnlockState struct {
 	NodeID            string  `json:"node_id"`
@@ -968,39 +951,6 @@ type NodeUnlockState struct {
 	ThresholdRequired int64   `json:"threshold_required"`
 	Progress          float64 `json:"progress"` // 0.0 to 1.0
 	UnlockedAt        string  `json:"unlocked_at,omitempty"`
-}
-
-// AddTrialKey adds a trial key to the pool
-func (nm *NetworkManager) AddTrialKey(info *TrialKeyInfo) {
-	nm.mu.Lock()
-	defer nm.mu.Unlock()
-	if nm.config.TrialPool.TrialKeys == nil {
-		nm.config.TrialPool.TrialKeys = make([]*TrialKeyInfo, 0)
-	}
-	nm.config.TrialPool.TrialKeys = append(nm.config.TrialPool.TrialKeys, info)
-	nm.doSave()
-}
-
-// GetTrialKeys returns all trial keys
-func (nm *NetworkManager) GetTrialKeys() []*TrialKeyInfo {
-	nm.mu.RLock()
-	defer nm.mu.RUnlock()
-	if nm.config.TrialPool.TrialKeys == nil {
-		return make([]*TrialKeyInfo, 0)
-	}
-	return nm.config.TrialPool.TrialKeys
-}
-
-// CreateTrialPoolForNode creates a trial pool when a node joins
-func (nm *NetworkManager) CreateTrialPoolForNode(nodeID string, quota int64) error {
-	if quota <= 0 {
-		quota = DefaultTrialQuota
-	}
-	if keyStore == nil {
-		return fmt.Errorf("key store not initialized")
-	}
-	_, _, err := keyStore.IssueTrialKey(nodeID, quota)
-	return err
 }
 
 // ============================================================

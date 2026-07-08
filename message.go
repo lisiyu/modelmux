@@ -106,10 +106,7 @@ func (m *MessageManager) SendMessage(toNodeID, subject, body, msgType string) er
 		return fmt.Errorf("unknown recipient node: %s", toNodeID)
 	}
 
-	// Spend credits
-	if !credits.SpendCredits(messageCost, "send_message", toNodeID) {
-		return fmt.Errorf("insufficient credits: need %d to send message", messageCost)
-	}
+	// v2.0: Messages are free (no credit system)
 
 	// Generate message ID
 	msgID, err := generateMsgID()

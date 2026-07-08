@@ -248,11 +248,11 @@ func (m *ProviderManager) Get(id string) (Provider, bool) {
 	return p.Safe(), true
 }
 
-// normalizeAccessControl ensures sensible defaults for access control.
-// If neither flag is explicitly set (both false, the zero value), default to private-only.
+// normalizeAccessControl ensures sensible defaults for access control (v2.0).
+// If neither flag is explicitly set (both false, the zero value), default to guest-only.
 func normalizeAccessControl(ac ProviderAccessControl) ProviderAccessControl {
 	// Zero value means "not set" — apply defaults
-	if !ac.AllowPrivateKey && !ac.AllowSharedKey {
+	if !ac.AllowGuest && !ac.AllowPublic {
 		return DefaultAccessControl()
 	}
 	return ac
@@ -311,17 +311,12 @@ type candidate struct {
 	Model    string
 }
 
-// RequestKeyType classifies the request key type for access control.
-// Returns "admin", "private", or "shared".
+// RequestKeyType classifies the request key type for access control (v2.0).
+// Returns "admin", "guest", "public", or "proxy".
 func RequestKeyType(r *http.Request) string {
 	// If relay already classified the key type, use it
 	if mkType := r.Header.Get("X-MK-KeyType"); mkType != "" {
-		switch mkType {
-		case "open_unbound", "open_bound":
-			return "shared"
-		default:
-			return "private"
-		}
+		return mkType
 	}
 
 	// Check role header (set by withProxyAuth)
@@ -331,37 +326,37 @@ func RequestKeyType(r *http.Request) string {
 
 	// Check Authorization header directly
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer mk_open_") {
-		return "shared"
-	}
-	if strings.HasPrefix(auth, "Bearer mk_trial_") {
-		return "private"
-	}
-	if strings.HasPrefix(auth, "Bearer mk_") {
-		return "private"
+	key := strings.TrimPrefix(auth, "Bearer ")
+	switch ClassifyKey(key) {
+	case KeyTypePublic:
+		return "public"
+	case KeyTypeGuest:
+		return "guest"
+	case KeyTypeProxy:
+		return "proxy"
 	}
 
-	// sk-xxx keys and proxy_api_key are treated as admin (unrestricted)
+	// Unknown keys are treated as admin (unrestricted)
 	return "admin"
 }
 
 // FilterByAccessControl filters candidates based on the provider's access control
-// and the request's key type. Admin/unrestricted keys bypass the check.
+// and the request's key type (v2.0). Proxy/admin keys bypass the check.
 func FilterByAccessControl(cands []candidate, keyType string) []candidate {
-	if keyType == "admin" {
-		return cands // admin keys bypass access control
+	if keyType == "admin" || keyType == "proxy" {
+		return cands // proxy/admin keys bypass access control
 	}
 
 	filtered := make([]candidate, 0, len(cands))
 	for _, c := range cands {
 		ac := c.Provider.AccessControl
 		switch keyType {
-		case "private":
-			if ac.AllowPrivateKey {
+		case "guest":
+			if ac.AllowGuest {
 				filtered = append(filtered, c)
 			}
-		case "shared":
-			if ac.AllowSharedKey {
+		case "public":
+			if ac.AllowPublic {
 				filtered = append(filtered, c)
 			}
 		default:
@@ -695,16 +690,18 @@ func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
 	return models
 }
 
-// providerAllowsKeyType checks if a provider allows a given key type.
+// providerAllowsKeyType checks if a provider allows a given key type (v2.0).
 func providerAllowsKeyType(p Provider, keyType string) bool {
 	ac := p.AccessControl
 	switch keyType {
-	case "private":
-		return ac.AllowPrivateKey
-	case "shared":
-		return ac.AllowSharedKey
+	case "admin", "proxy":
+		return true // proxy keys always allowed
+	case "guest":
+		return ac.AllowGuest
+	case "public":
+		return ac.AllowPublic
 	default:
-		return true // admin or unknown → allow
+		return true // unknown → allow
 	}
 }
 
