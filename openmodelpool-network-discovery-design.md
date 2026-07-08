@@ -1,6 +1,8 @@
 # OpenModelPool P2P 网络发现与 Gateway 架构设计
 
-> 版本：v2.0 | 2026-07-08
+> 版本：v2.1 | 2026-07-08
+>
+> **v2.1 变更**：放弃 Cloudflare Worker 方案，采用 Seed 复用模型。项目域名作为全球统一 base URL，每个节点本身即 Seed（:8001 端口），零额外服务器成本。
 
 ## 1. 核心思路
 
@@ -26,12 +28,14 @@ Node A 有 gpt-4o，Node B 有 claude-3
 ```
 Phase 0（冷启动）     Phase 1（网络形成）       Phase 2（自治网络）
 ━━━━━━━━━━━━━━━━     ━━━━━━━━━━━━━━━━━━      ━━━━━━━━━━━━━━━━━
-官方固定 Seed 节点    Seed 节点 + Gossip 发现    完全自治
-GitHub 注册表引导     新节点自动加入 Gateway     固定 Seed 逐步退役
-用户手动注册域名      Gateway 池自然扩大         DNS 记录由网络维护
+创始人节点 = 首 Seed   Seed 节点 + Gossip 发现    完全自治
+项目域名 = 全局入口    新节点绑定域名自动加入      Seed 不再特殊
+GitHub 注册表引导      Gateway 池自然扩大         DNS 记录由网络维护
 
-用户 → 固定 Seed URL   用户 → Seed + Gateway     用户 → 任一 Gateway
+用户 → 项目域名         用户 → 任一 Seed/Gateway   用户 → 任一 Gateway
 ```
+
+> **关键决策**：项目域名（如 openmodelpool.com）作为全球统一 base URL，所有纯消费者用这个地址作为入口。项目域名绑定到创始人的节点，该节点同时是 Seed + Gateway。
 
 ---
 
@@ -204,28 +208,56 @@ client = OpenAI(
 }
 ```
 
-### 5.2 官方 Seed 节点
+### 5.2 Seed 复用模型（无额外服务器）
 
-冷启动期间，官方运营 3 个 Seed 节点：
+**核心设计：Seed 不需要额外部署，每个 openmodelpool 节点本身就是 Seed。**
 
-```
-seed1.openmodelpool.com  →  官方节点 A（如 AWS us-east）
-seed2.openmodelpool.com  →  官方节点 B（如 GCP eu-west）
-seed3.openmodelpool.com  →  官方节点 C（如 阿里云 ap-east）
-```
-
-**统一入口域名**（DNS 指向所有 Seed + Gateway）：
+冷启动期间，项目创始人的节点作为首个 Seed：
 
 ```
-api.openmodelpool.com  →  [seed1 IP, seed2 IP, seed3 IP, gateway1 IP, ...]
+openmodelpool.com  →  创始人的节点（Seed + Gateway）
 ```
+
+**统一入口域名 = 项目域名 = Seed 节点地址**：
+
+```
+openmodelpool.com / api.openmodelpool.com  →  Seed 节点 IP
+```
+
+**后续其他用户绑定域名后，自动成为新 Seed**：
+
+```
+node-bob.com      →  Bob 的节点（Seed + Gateway）
+alice-node.io     →  Alice 的节点（Seed + Gateway）
+```
+
+**Seed 复用实现**：每个 openmodelpool 节点暴露两个端口：
+
+| 端口 | 用途 | 说明 |
+|------|------|------|
+| :8000 | API 服务 | 处理请求（已有） |
+| :8001 | 节点发现 | 返回已知节点列表（Seed 功能） |
+
+```go
+// :8001/api/peers — 每个节点都跑的 Seed 端点
+func handlePeers(w http.ResponseWriter, r *http.Request) {
+    nodes := networkManager.GetKnownNodes() // 从 AddrMan 读取
+    json.NewEncoder(w).Encode(nodes)
+}
+```
+
+**成本为零**：不需要额外服务器，不需要额外部署，Seed 跟 API 服务跑在同一台机器上。
 
 ### 5.3 Seed 节点运维规则
 
-- **最低在线率**：99.5%（月度）
-- **心跳检查**：官方监控服务每 5 分钟检查 Seed 健康状态
-- **DNS 更新**：Seed IP 变化时自动更新 DNS A 记录
-- **退役条件**：当网络中 Gateway 节点数量 ≥ 10 且平均在线率 > 95% 时，逐步减少 Seed
+由于 Seed 复用用户节点，运维规则简化为：
+
+- **最低在线率目标**：95%（社区节点，非 SLA 承诺）
+- **心跳机制**：节点每 60 秒向已知 Seed 发送 PING，更新 LastSeen
+- **超时处理**：30 分钟无响应的节点从路由表中移除（`fail_count >= 3`）
+- **DNS 更新**：Seed IP 变化时，节点运营者自行更新 DNS A 记录
+- **Seed 扩容**：当网络中节点数量 ≥ 5 时，鼓励更多用户绑定域名成为 Seed
+- **退役条件**：Seed 不需要"退役"，它始终是网络的一部分；只是不再承担"唯一入口"的角色
 
 ---
 
@@ -352,25 +384,42 @@ type PeerInfo struct {
 
 ### 7.2 DNS 记录设计
 
+**Phase 0（初始，单 Seed）：**
+
 ```
-; Seed 节点（固定，官方管理）
-seed1.openmodelpool.com.  A  1.2.3.4
-seed2.openmodelpool.com.  A  5.6.7.8
-seed3.openmodelpool.com.  A  9.10.11.12
+; 项目域名 = 全局入口 = Seed 节点
+openmodelpool.com.       A  创始节点 IP
+api.openmodelpool.com.   A  创始节点 IP     ; API 子域名
 
-; 统一入口（动态，指向所有活跃 Gateway）
-api.openmodelpool.com.    A  1.2.3.4
-                          A  5.6.7.8
-                          A  9.10.11.12
-                          A  203.0.113.1   ; 用户 Gateway C
-                          A  198.51.100.5  ; 用户 Gateway D
+; 其他用户绑定域名后成为新 Seed
+; node-bob.com.          A  Bob 的节点 IP   （用户自行管理）
+; alice-node.io.         A  Alice 的节点 IP （用户自行管理）
 
-; TTL 设置
+$TTL 300
+```
+
+**Phase 1+（多 Seed，DNS 轮询）：**
+
+```
+; 统一入口（DNS 轮询指向所有活跃 Seed + Gateway）
+api.openmodelpool.com.   A  创始节点 IP
+                         A  Bob 的节点 IP
+                         A  Alice 的节点 IP
+                         A  203.0.113.1    ; 新 Gateway D
+
 $TTL 300  ; 5 分钟，确保节点下线后快速生效
 ```
 
-### 7.3 DNS 自动更新服务
+> **DNS 轮询**：多个 A 记录指向不同节点 IP，DNS 解析器轮流返回，天然负载均衡。无需额外设备。
 
+### 7.3 DNS 管理策略
+
+**Phase 0（手动）：**
+- 创始人手动设置 A 记录，指向自己节点的 IP
+- IP 变更时手动更新（家庭宽带可用 DDNS 工具自动更新）
+- 简单直接，适合 1-3 个 Seed 阶段
+
+**Phase 1+（自动化）：**
 ```
 ┌─────────────────────────────────────┐
 │         DNS Manager Service          │
@@ -384,7 +433,7 @@ $TTL 300  ; 5 分钟，确保节点下线后快速生效
 └─────────────────────────────────────┘
 ```
 
-初期 DNS Manager 运行在 Seed 节点上（中心化依赖），随网络自治逐步由多节点共同维护。
+DNS Manager 运行在 Seed 节点上，随网络自治逐步由多节点共同维护。
 
 ---
 
@@ -395,16 +444,17 @@ $TTL 300  ; 5 分钟，确保节点下线后快速生效
 ```
 目标：建立初始网络，验证核心流程
 
-- [ ] 注册域名（openmodelpool.com）
-- [ ] 部署 3 个官方 Seed 节点
-- [ ] 配置 DNS 记录（seed1/2/3 + api）
-- [ ] 搭建 DNS Manager 服务
-- [ ] 在 GitHub 发布节点注册引导
-- [ ] 鼓励早期用户在 GitHub 注册自己的节点域名
+- [ ] 注册域名（openmodelpool.com/.io/.net/.cc/.dev）
+- [ ] 项目域名 A 记录指向创始人节点 IP
+- [ ] 节点实现 :8001 Seed 端点（/api/peers）
+- [ ] GitHub 发布节点注册引导（早期用户注册）
+- [ ] 鼓励早期用户注册域名绑定自己的节点
 
-节点发现：GitHub 注册表（中心化）
-路由：Seed 节点直接转发
-DNS：官方手动/半自动管理
+节点发现：GitHub 注册表 + Seed 端点（单节点）
+路由：Seed 节点直接转发（Gateway 已实现 ✅）
+DNS：A 记录指向单 Seed 节点
+
+成本：域名注册费（~$10-50/年），无额外服务器费用
 ```
 
 ### Phase 1：网络形成（第 3-6 个月）
@@ -447,12 +497,13 @@ DNS：多节点共同维护 → 最终可能过渡到 DHT
 
 ### P0（冷启动必需）
 
-| 模块 | 文件 | 说明 |
-|------|------|------|
-| 节点注册表扩展 | `.nodes/*.json` | 增加 `is_gateway`/`is_seed` 字段 |
-| Gateway 标记 | `admin.html` | 节点设置中增加 Gateway 开关 |
-| 路由表 | `network_relay.go` | 按模型查询可用节点 |
-| 请求转发 | `network_relay.go` | Gateway 将请求转发给目标节点 |
+| 模块 | 文件 | 状态 | 说明 |
+|------|------|------|------|
+| Gateway 路由入口 | `network_relay.go` | ✅ 已实现 | `handleGatewayRequest` + `SelectBestNode` |
+| Seed 端点 | `main.go` | 🔲 待实现 | `:8001/api/peers` — 返回已知节点列表 |
+| 节点注册表扩展 | `.nodes/*.json` | 🔲 待实现 | 增加 `is_gateway`/`is_seed` 字段 |
+| Gateway 标记 | `admin.html` | 🔲 待实现 | 节点设置中增加 Gateway/Seed 开关 |
+| 域名绑定引导 | `admin.html` | 🔲 待实现 | 引导用户注册域名 + 配置 DNS |
 
 ### P1（网络发现）
 
@@ -514,13 +565,19 @@ DNS：多节点共同维护 → 最终可能过渡到 DHT
 
 ## 附录 B：用户视角
 
-### 纯消费者
+### 纯消费者（使用项目域名作为全局入口）
 
 ```python
-# 使用全球统一入口
+# 全球统一入口 = 项目域名
+client = OpenAI(
+    base_url="https://openmodelpool.com/v1",
+    api_key="mk_public_v1"  # 全球公共 Key，零门槛
+)
+
+# 或使用 api 子域名
 client = OpenAI(
     base_url="https://api.openmodelpool.com/v1",
-    api_key="mk_public_v1"  # 全球公共 Key，零门槛
+    api_key="mk_public_v1"
 )
 ```
 
@@ -535,6 +592,8 @@ client = OpenAI(
 # 调 gpt-4o → 本地处理
 # 调 claude-3 → 自动转发，用户无感知
 ```
+
+> **两种入口等价**：无论用项目域名还是自己的域名，用户都能访问全网模型。区别只是请求先到哪个节点——项目域名先到 Seed，自己的域名先到自己。
 
 ### 节点运营者（部署步骤）
 
