@@ -315,6 +315,13 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 			update["proxy_api_key"] = v
 		}
 	}
+	// Allow generic keys to be set (public_url, service_port, etc.)
+	genericKeys := []string{"public_url", "service_port", "node_name", "region"}
+	for _, k := range genericKeys {
+		if v, ok := body[k]; ok {
+			update[k] = v
+		}
+	}
 	if len(update) == 0 && body["proxy_api_key"] == "" {
 		// Only proxy_api_key clear was sent, already handled
 		writeJSON(w, 200, cfg.Masked())
@@ -323,6 +330,13 @@ func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	if len(update) == 0 {
 		writeError(w, 400, "at least one config field required")
 		return
+	}
+	// Invalidate cached self addresses when public_url or service_port changes
+	if _, ok := update["public_url"]; ok {
+		cachedSelfAddresses = nil
+	}
+	if _, ok := update["service_port"]; ok {
+		cachedSelfAddresses = nil
 	}
 	cfg.SetMany(update)
 	writeJSON(w, 200, cfg.Masked())
