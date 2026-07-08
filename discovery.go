@@ -15,7 +15,7 @@ import (
 // Returns (nil, nil) on 304 Not Modified.
 func (f *FederationManager) fetchFromRegistry() (*TrustPool, error) {
 	registryURL := cfg.Get("federation_registry_url",
-		"https://raw.githubusercontent.com/lisiyu/modelmux/main/federation/trust_pool.json")
+		"https://raw.githubusercontent.com/lisiyu/openmodelpool/main/federation/trust_pool.json")
 
 	req, err := http.NewRequest("GET", registryURL, nil)
 	if err != nil {

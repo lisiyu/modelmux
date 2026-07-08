@@ -1,4 +1,4 @@
-# ModelMux Agent Mobile App
+# OpenModelPool Agent Mobile App
 
 > 基于 React Native 的跨平台移动客户端，支持 iOS 和 Android。
 
@@ -61,7 +61,7 @@ cd android
 
 ```bash
 # 1. 打开 Xcode 工程
-open ios/ModelMuxAgent.xcworkspace
+open ios/OpenModelPoolAgent.xcworkspace
 
 # 2. 选择目标设备 / 配置签名
 # 3. Product → Archive → Distribute App
@@ -91,7 +91,7 @@ mobile/
 │   │   └── ProfileScreen.tsx  # 我的：密钥管理 + 分享 + 设置
 │   ├── navigation/            # 导航配置（已内聚到 App.tsx）
 │   ├── services/
-│   │   └── api.ts             # ModelMux API 封装
+│   │   └── api.ts             # OpenModelPool API 封装
 │   ├── store/
 │   │   └── agentStore.ts      # Zustand 全局状态管理
 │   ├── utils/

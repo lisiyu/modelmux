@@ -1,11 +1,11 @@
 #!/bin/bash
-# ModelMux Cloudflare 命名隧道配置脚本
+# OpenModelPool Cloudflare 命名隧道配置脚本
 # 用途：配置 zuiniu.com 作为固定公网域名
 
 set -e
 
 echo "=========================================="
-echo "ModelMux Cloudflare 命名隧道配置"
+echo "OpenModelPool Cloudflare 命名隧道配置"
 echo "=========================================="
 echo ""
 
@@ -27,7 +27,7 @@ echo "✅ 登录成功"
 echo ""
 
 # 步骤 2: 创建隧道
-TUNNEL_NAME="modelmux"
+TUNNEL_NAME="openmodelpool"
 echo "📝 步骤 2/4: 创建隧道 (名称: $TUNNEL_NAME)"
 if cloudflared tunnel list 2>/dev/null | grep -q "$TUNNEL_NAME"; then
     echo "⚠️  隧道 '$TUNNEL_NAME' 已存在，跳过创建"
@@ -58,7 +58,7 @@ if [ -z "$TUNNEL_ID" ]; then
 fi
 
 cat > config.yml << EOF
-# ModelMux Cloudflare Tunnel 配置
+# OpenModelPool Cloudflare Tunnel 配置
 # 隧道名称: $TUNNEL_NAME
 # 隧道 ID: $TUNNEL_ID
 # 域名: zuiniu.com

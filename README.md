@@ -1,4 +1,4 @@
-# ModelMux Agent
+# OpenModelPool Agent
 
 **去中心化 AI 能力共享网络** — 让大模型的能力像信息一样自由流动。
 
@@ -9,7 +9,7 @@
 
 ## 🤖 它是什么？
 
-**ModelMux Agent 是一个 AI 智能代理。** 和你用过的任何 AI Agent 没有本质区别——持有 API Key，向上游模型服务商发送请求，获取响应。
+**OpenModelPool Agent 是一个 AI 智能代理。** 和你用过的任何 AI Agent 没有本质区别——持有 API Key，向上游模型服务商发送请求，获取响应。
 
 唯一的区别是：它多了一个**可选的共享功能**。你可以把闲置的模型调用能力分享给网络中的其他人，也可以使用他人分享的能力。
 
@@ -23,7 +23,7 @@
 
 当年，BitTorrent 让知识不再被服务器垄断；IPFS 让存储不再依赖单一节点；Tor 让通信不再受地域束缚。
 
-**ModelMux Agent 要做的是同一件事——但共享的不是文件，而是 AI 的能力。**
+**OpenModelPool Agent 要做的是同一件事——但共享的不是文件，而是 AI 的能力。**
 
 我们相信，一个身处纽约的开发者手中的 Claude API，和北京程序员手中的一样有价值。当全球的 AI 能力通过一个去中心化网络汇聚在一起，任何人都可以平等地获取最强大的智能——无论他在哪里。
 
@@ -40,7 +40,7 @@
 >
 > **你们互相交换，各取所需。**
 
-这就是 ModelMux Agent 的核心经济模型——**不是买卖，是交换**：
+这就是 OpenModelPool Agent 的核心经济模型——**不是买卖，是交换**：
 
 - 你贡献自己富余的模型能力（Gemini、Claude、GPT-4……）
 - 获得贡献积分，可以用来调用别人分享的模型（GLM、通义、Kimi……）
@@ -74,7 +74,7 @@
 
 ## 🧭 项目愿景
 
-ModelMux Agent 从一个轻量级 AI API 代理起步，正在演化为一个 **P2P AI 能力共享网络**：
+OpenModelPool Agent 从一个轻量级 AI API 代理起步，正在演化为一个 **P2P AI 能力共享网络**：
 
 ```
   今天                          未来
@@ -185,19 +185,19 @@ ModelMux Agent 从一个轻量级 AI API 代理起步，正在演化为一个 **
 **Linux / macOS：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash
 ```
 
 自定义参数：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash -s -- --port 9090 --dir /opt/modelmux
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash -s -- --port 9090 --dir /opt/openmodelpool
 ```
 
 **Windows (PowerShell 管理员)：**
 
 ```powershell
-irm https://raw.githubusercontent.com/lisiyu/modelmux/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.ps1 | iex
 ```
 
 安装脚本自动完成：检测平台 → 下载二进制 → SHA256 校验 → 安装 → 注册系统服务 → 自动启动。
@@ -206,14 +206,14 @@ irm https://raw.githubusercontent.com/lisiyu/modelmux/main/install.ps1 | iex
 
 ```bash
 # 克隆
-git clone https://github.com/lisiyu/modelmux.git
-cd modelmux
+git clone https://github.com/lisiyu/openmodelpool.git
+cd openmodelpool
 
 # 编译当前平台
 make build
 
 # 运行（默认端口 8000）
-./modelmux
+./openmodelpool
 ```
 
 ### Docker 部署
@@ -223,8 +223,8 @@ make build
 docker compose up -d
 
 # 或手动
-docker build -t modelmux .
-docker run -d --name modelmux -p 8000:8000 -v $(pwd)/data:/app/data modelmux
+docker build -t openmodelpool .
+docker run -d --name openmodelpool -p 8000:8000 -v $(pwd)/data:/app/data openmodelpool
 ```
 
 ### 环境变量
@@ -416,12 +416,12 @@ make build-all
 
 | 平台 | 架构 | 输出文件 | 适用设备 |
 |------|------|---------|---------|
-| Linux | amd64 | `modelmux-linux-amd64` | x86_64 服务器 |
-| Linux | arm64 | `modelmux-linux-arm64` | ARM 服务器 |
-| Linux | armv7 | `modelmux-linux-armv7` | 树莓派 3B、OpenWRT |
-| macOS | amd64 | `modelmux-darwin-amd64` | Intel Mac |
-| macOS | arm64 | `modelmux-darwin-arm64` | Apple Silicon Mac |
-| Windows | amd64 | `modelmux-windows-amd64.exe` | x64 Windows |
+| Linux | amd64 | `openmodelpool-linux-amd64` | x86_64 服务器 |
+| Linux | arm64 | `openmodelpool-linux-arm64` | ARM 服务器 |
+| Linux | armv7 | `openmodelpool-linux-armv7` | 树莓派 3B、OpenWRT |
+| macOS | amd64 | `openmodelpool-darwin-amd64` | Intel Mac |
+| macOS | arm64 | `openmodelpool-darwin-arm64` | Apple Silicon Mac |
+| Windows | amd64 | `openmodelpool-windows-amd64.exe` | x64 Windows |
 
 ### Makefile 命令速查
 
@@ -455,7 +455,7 @@ go build -ldflags="-s -w" -trimpath
 |------|------|--------|
 | `--port` | 服务端口 | `8000` |
 | `--dir` | 安装目录 | `/usr/local/bin` |
-| `--data` | 数据目录 | `/var/lib/modelmux` |
+| `--data` | 数据目录 | `/var/lib/openmodelpool` |
 | `--version` | 指定版本 | `latest` |
 
 ## ⚙️ 配置说明
@@ -533,7 +533,7 @@ curl -X POST http://localhost:8000/api/routing/weights \
                         │ POST /v1/chat/completions
                         ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  ModelMux Agent 代理网关                       │
+│                  OpenModelPool Agent 代理网关                       │
 │                                                         │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
 │  │ 认证中间件 │→│ 智能路由  │→│  失败降级 (fallback)  │  │
@@ -579,7 +579,7 @@ curl -X POST http://localhost:8000/api/routing/weights \
 ### 项目结构
 
 ```
-modelmux/
+openmodelpool/
 ├── main.go           # 入口，HTTP 路由注册，中间件
 ├── types.go          # 数据模型（OpenAI 兼容格式）
 ├── config.go         # 配置管理（JSON + 环境变量 + 加密）
@@ -711,9 +711,9 @@ MIT
 
 ## 🙏 开源致谢
 
-ModelMux Agent 的诞生离不开以下优秀的开源项目和技术：
+OpenModelPool Agent 的诞生离不开以下优秀的开源项目和技术：
 
-- [**Go**](https://go.dev/) — 简洁高效的编程语言，ModelMux Agent 的基石
+- [**Go**](https://go.dev/) — 简洁高效的编程语言，OpenModelPool Agent 的基石
 - [**golang-jwt/jwt**](https://github.com/golang-jwt/jwt) — 可靠的 JWT 认证实现
 - [**golang.org/x/crypto**](https://pkg.go.dev/golang.org/x/crypto) — 安全的 bcrypt 密码哈希
 - [**golang.org/x/net**](https://pkg.go.dev/golang.org/x/net) — SOCKS5 代理支持
@@ -725,7 +725,7 @@ ModelMux Agent 的诞生离不开以下优秀的开源项目和技术：
 
 感谢开源社区的持续贡献，让 AI 工具生态更加繁荣。
 
-**精神先驱** — 以下项目证明了去中心化共享的力量，ModelMux Agent 沿袭同样的信念：
+**精神先驱** — 以下项目证明了去中心化共享的力量，OpenModelPool Agent 沿袭同样的信念：
 
 - [**BitTorrent**](https://www.bittorrent.com/) — 让知识不再被服务器垄断，P2P 文件共享的先驱
 - [**IPFS**](https://ipfs.tech/) — 内容寻址、去中心化存储，让数据属于所有人

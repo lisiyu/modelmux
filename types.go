@@ -515,7 +515,7 @@ type FederationConfig struct {
 	RelayEnabled     bool   `json:"relay_enabled"`
 	MaxConcurrentRelay int  `json:"max_concurrent_relay"`
 	RegistryURL      string `json:"registry_url"`      // GitHub raw URL
-	RegistryRepo     string `json:"registry_repo"`     // "lisiyu/modelmux"
+	RegistryRepo     string `json:"registry_repo"`     // "lisiyu/openmodelpool"
 	GossipIntervalS  int    `json:"gossip_interval_s"` // default 30
 	HeartbeatIntervalS int  `json:"heartbeat_interval_s"` // default 60
 }

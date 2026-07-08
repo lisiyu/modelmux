@@ -1,4 +1,4 @@
-# ModelMux Agent 一键域名绑定功能设计
+# OpenModelPool Agent 一键域名绑定功能设计
 
 ## 功能目标
 在 Web 管理面板实现一键绑定固定域名，替代手动配置 Cloudflare Tunnel。
@@ -33,7 +33,7 @@ Body: { "token": "xxxxx" }
 **创建命名隧道**
 ```
 POST /api/tunnel/create
-Body: { "name": "modelmux", "domain": "zuiniu.com" }
+Body: { "name": "openmodelpool", "domain": "zuiniu.com" }
 ```
 - 调用 Cloudflare API 创建隧道
 - 返回 tunnel_id

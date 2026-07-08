@@ -1,17 +1,17 @@
 #!/bin/bash
-# ModelMux 一键安装脚本 (Linux / macOS)
-# 用法: curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash
-# 自定义: curl -fsSL ... | bash -s -- --port 9090 --dir /opt/modelmux
+# OpenModelPool 一键安装脚本 (Linux / macOS)
+# 用法: curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash
+# 自定义: curl -fsSL ... | bash -s -- --port 9090 --dir /opt/openmodelpool
 
 set -euo pipefail
 
 # ─── 默认配置 ───
-REPO="lisiyu/modelmux"
+REPO="lisiyu/openmodelpool"
 VERSION="${MODELmux_VERSION:-latest}"
 INSTALL_DIR="${MODELmux_DIR:-/usr/local/bin}"
-DATA_DIR="${MODELmux_DATA:-/var/lib/modelmux}"
+DATA_DIR="${MODELmux_DATA:-/var/lib/openmodelpool}"
 PORT="${MODELmux_PORT:-8000}"
-SERVICE_NAME="modelmux"
+SERVICE_NAME="openmodelpool"
 GITHUB_DOWNLOAD="https://github.com/${REPO}/releases"
 GITHUB_RAW="https://raw.githubusercontent.com/${REPO}"
 
@@ -33,10 +33,10 @@ while [[ $# -gt 0 ]]; do
         --data)    DATA_DIR="$2"; shift 2;;
         --version) VERSION="$2"; shift 2;;
         -h|--help)
-            echo "ModelMux 安装脚本"
+            echo "OpenModelPool 安装脚本"
             echo "  --port     服务端口 (默认 8000)"
             echo "  --dir      安装目录 (默认 /usr/local/bin)"
-            echo "  --data     数据目录 (默认 /var/lib/modelmux)"
+            echo "  --data     数据目录 (默认 /var/lib/openmodelpool)"
             echo "  --version  指定版本 (默认 latest)"
             exit 0;;
         *) err "未知参数: $1"; exit 1;;
@@ -62,14 +62,14 @@ case "$ARCH" in
     *)               err "不支持的架构: $ARCH"; exit 1;;
 esac
 
-BINARY_NAME="modelmux-${OS}-${ARCH}"
+BINARY_NAME="openmodelpool-${OS}-${ARCH}"
 [[ "$OS" == "windows" ]] && BINARY_NAME="${BINARY_NAME}.exe"
 
 ok "系统: ${OS}/${ARCH}"
 info "版本: ${VERSION}"
 
 # ─── 下载 ───
-header "下载 ModelMux"
+header "下载 OpenModelPool"
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -144,13 +144,13 @@ header "安装二进制文件"
 chmod +x "${TMPDIR}/${BINARY_NAME}"
 
 if [[ "$INSTALL_DIR" == "/usr/local/bin" || "$INSTALL_DIR" == "/usr/bin" ]]; then
-    sudo install -m 755 "${TMPDIR}/${BINARY_NAME}" "${INSTALL_DIR}/modelmux"
+    sudo install -m 755 "${TMPDIR}/${BINARY_NAME}" "${INSTALL_DIR}/openmodelpool"
 else
     mkdir -p "$INSTALL_DIR"
-    install -m 755 "${TMPDIR}/${BINARY_NAME}" "${INSTALL_DIR}/modelmux"
+    install -m 755 "${TMPDIR}/${BINARY_NAME}" "${INSTALL_DIR}/openmodelpool"
 fi
 
-ok "已安装到 ${INSTALL_DIR}/modelmux"
+ok "已安装到 ${INSTALL_DIR}/openmodelpool"
 
 # 创建数据目录
 mkdir -p "$DATA_DIR"
@@ -164,7 +164,7 @@ if [[ "$OS" == "linux" ]]; then
     SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
     sudo tee "$SERVICE_FILE" > /dev/null << EOF
 [Unit]
-Description=ModelMux API Gateway
+Description=OpenModelPool API Gateway
 After=network.target
 Wants=network-online.target
 
@@ -172,12 +172,12 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=${DATA_DIR}
-ExecStart=${INSTALL_DIR}/modelmux -port ${PORT} -data ${DATA_DIR}
+ExecStart=${INSTALL_DIR}/openmodelpool -port ${PORT} -data ${DATA_DIR}
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=modelmux
+SyslogIdentifier=openmodelpool
 
 # 安全加固
 NoNewPrivileges=true
@@ -196,7 +196,7 @@ EOF
 elif [[ "$OS" == "darwin" ]]; then
     # launchd plist
     PLIST_DIR="$HOME/Library/LaunchAgents"
-    PLIST_FILE="${PLIST_DIR}/com.modelmux.agent.plist"
+    PLIST_FILE="${PLIST_DIR}/com.openmodelpool.agent.plist"
     mkdir -p "$PLIST_DIR"
 
     cat > "$PLIST_FILE" << EOF
@@ -205,10 +205,10 @@ elif [[ "$OS" == "darwin" ]]; then
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.modelmux.agent</string>
+    <string>com.openmodelpool.agent</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${INSTALL_DIR}/modelmux</string>
+        <string>${INSTALL_DIR}/openmodelpool</string>
         <string>-port</string>
         <string>${PORT}</string>
         <string>-data</string>
@@ -221,9 +221,9 @@ elif [[ "$OS" == "darwin" ]]; then
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>${DATA_DIR}/modelmux.log</string>
+    <string>${DATA_DIR}/openmodelpool.log</string>
     <key>StandardErrorPath</key>
-    <string>${DATA_DIR}/modelmux.err.log</string>
+    <string>${DATA_DIR}/openmodelpool.err.log</string>
 </dict>
 </plist>
 EOF
@@ -237,7 +237,7 @@ fi
 header "验证安装"
 
 sleep 2
-if "${INSTALL_DIR}/modelmux" -version 2>/dev/null || true; then
+if "${INSTALL_DIR}/openmodelpool" -version 2>/dev/null || true; then
     ok "版本信息获取成功"
 fi
 
@@ -253,12 +253,12 @@ fi
 # ─── 完成 ───
 echo
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}${BOLD}║     ModelMux 安装完成！                  ║${NC}"
+echo -e "${GREEN}${BOLD}║     OpenModelPool 安装完成！                  ║${NC}"
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════╝${NC}"
 echo
 echo -e "  ${BOLD}访问地址:${NC}  http://localhost:${PORT}"
 echo -e "  ${BOLD}管理面板:${NC}  http://localhost:${PORT}/admin"
-echo -e "  ${BOLD}二进制路径:${NC} ${INSTALL_DIR}/modelmux"
+echo -e "  ${BOLD}二进制路径:${NC} ${INSTALL_DIR}/openmodelpool"
 echo -e "  ${BOLD}数据目录:${NC}  ${DATA_DIR}"
 echo
 if [[ "$OS" == "linux" ]]; then
@@ -269,10 +269,10 @@ if [[ "$OS" == "linux" ]]; then
     echo -e "    停止服务:  sudo systemctl stop $SERVICE_NAME"
 elif [[ "$OS" == "darwin" ]]; then
     echo -e "  ${CYAN}服务管理:${NC}"
-    echo -e "    查看状态:  launchctl list | grep modelmux"
-    echo -e "    查看日志:  tail -f ${DATA_DIR}/modelmux.log"
+    echo -e "    查看状态:  launchctl list | grep openmodelpool"
+    echo -e "    查看日志:  tail -f ${DATA_DIR}/openmodelpool.log"
     echo -e "    重启服务:  launchctl unload/load $PLIST_FILE"
 fi
 echo
-echo -e "  ${YELLOW}卸载:${NC} sudo rm ${INSTALL_DIR}/modelmux && sudo rm -rf ${DATA_DIR}"
+echo -e "  ${YELLOW}卸载:${NC} sudo rm ${INSTALL_DIR}/openmodelpool && sudo rm -rf ${DATA_DIR}"
 echo

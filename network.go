@@ -768,7 +768,7 @@ func GetDisclaimer() DisclaimerResponse {
 		Sections: []DisclaimerSection{
 			{
 				Heading: "什么是共享网络？",
-				Content: "ModelMux Agent 本质上是一个 AI 智能代理（Agent）——和你使用的任何 AI Agent 没有区别：持有 API Key，向上游模型服务商发送请求，获取响应。\n\n共享网络只是在这个 Agent 的基础上增加了一个可选功能：将你闲置的模型调用能力分享给网络中的其他用户，同时也可以使用他人分享的模型能力。每个节点都可以作为 relay 为他人转发请求，形成去中心化的 P2P 网络。\n\n这和你自己部署一个 Agent 来调用 API 在本质上是相同的——区别仅在于 prompt 来自谁。对上游服务商而言，请求来自同一个 API Key，消耗的是同一个账户配额。",
+				Content: "OpenModelPool Agent 本质上是一个 AI 智能代理（Agent）——和你使用的任何 AI Agent 没有区别：持有 API Key，向上游模型服务商发送请求，获取响应。\n\n共享网络只是在这个 Agent 的基础上增加了一个可选功能：将你闲置的模型调用能力分享给网络中的其他用户，同时也可以使用他人分享的模型能力。每个节点都可以作为 relay 为他人转发请求，形成去中心化的 P2P 网络。\n\n这和你自己部署一个 Agent 来调用 API 在本质上是相同的——区别仅在于 prompt 来自谁。对上游服务商而言，请求来自同一个 API Key，消耗的是同一个账户配额。",
 			},
 			{
 				Heading: "启用后将发生什么？",

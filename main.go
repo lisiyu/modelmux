@@ -454,7 +454,7 @@ func main() {
 		}
 	}()
 
-	slog.Info("ModelMux Agent started", "port", port, "providers", len(pm.Enabled()))
+	slog.Info("OpenModelPool Agent started", "port", port, "providers", len(pm.Enabled()))
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
@@ -763,7 +763,7 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 		"federation_enabled":       cfg.Get("federation_enabled", "false"),
 		"federation_relay_enabled": cfg.Get("federation_relay_enabled", "false"),
 		"federation_registry_url":  cfg.Get("federation_registry_url", ""),
-		"federation_registry_repo": cfg.Get("federation_registry_repo", "lisiyu/modelmux"),
+		"federation_registry_repo": cfg.Get("federation_registry_repo", "lisiyu/openmodelpool"),
 		"gossip_interval_s":        cfg.Get("gossip_interval_s", "30"),
 		"heartbeat_interval_s":     cfg.Get("heartbeat_interval_s", "60"),
 		"tunnel_enabled":           cfg.Get("tunnel_enabled", "false"),

@@ -265,7 +265,7 @@ func sendBudgetAlert(providerName, message string) {
 		return
 	}
 	s := auth.GetSMTP()
-	subject := "ModelMux Agent Token 预算告警"
+	subject := "OpenModelPool Agent Token 预算告警"
 	msgBody := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
 		subject, s.FromEmail, adminEmail, message)
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)

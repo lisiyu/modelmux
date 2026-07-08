@@ -587,7 +587,7 @@ func handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 2: Create tunnel
-	tunnelName := "modelmux-" + sanitizeDomain(body.Domain)
+	tunnelName := "openmodelpool-" + sanitizeDomain(body.Domain)
 	slog.Info("domain binding: creating tunnel", "name", tunnelName)
 	tunnelInfo, err := binder.createTunnelViaAPI(ctx, tunnelName)
 	if err != nil {

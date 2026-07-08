@@ -1,5 +1,5 @@
 #!/bin/bash
-# ModelMux 多平台交叉编译脚本
+# OpenModelPool 多平台交叉编译脚本
 # 用法:
 #   ./build-all.sh                 # 编译所有平台
 #   ./build-all.sh linux-amd64     # 编译单个平台
@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-PROJECT="modelmux"
+PROJECT="openmodelpool"
 OUTPUT_DIR="dist"
 GO_BIN="/usr/local/go/bin/go"
 export GOPROXY="https://goproxy.cn,direct"
@@ -24,12 +24,12 @@ VERSION=$(get_version)
 BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
 
 declare -A TARGETS=(
-    ["linux-amd64"]="modelmux-linux-amd64"
-    ["linux-arm64"]="modelmux-linux-arm64"
-    ["linux-armv7"]="modelmux-linux-armv7"
-    ["darwin-amd64"]="modelmux-darwin-amd64"
-    ["darwin-arm64"]="modelmux-darwin-arm64"
-    ["windows-amd64"]="modelmux-windows-amd64.exe"
+    ["linux-amd64"]="openmodelpool-linux-amd64"
+    ["linux-arm64"]="openmodelpool-linux-arm64"
+    ["linux-armv7"]="openmodelpool-linux-armv7"
+    ["darwin-amd64"]="openmodelpool-darwin-amd64"
+    ["darwin-arm64"]="openmodelpool-darwin-arm64"
+    ["windows-amd64"]="openmodelpool-windows-amd64.exe"
 )
 
 LDFLAGS="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}"
@@ -84,7 +84,7 @@ if [[ -z "$GO_BIN" || ! -x "$GO_BIN" ]]; then
     exit 1
 fi
 
-info "ModelMux 交叉编译"
+info "OpenModelPool 交叉编译"
 info "版本: $VERSION"
 info "编译器: $($GO_BIN version)"
 echo
@@ -140,7 +140,7 @@ info "成功: $SUCCESS / 失败: $FAIL / 总计: $((SUCCESS + FAIL))"
 echo
 
 if [[ $SUCCESS -gt 0 ]]; then
-    echo "# ModelMux $VERSION SHA256 Checksums" > "${OUTPUT_DIR}/checksums.txt"
+    echo "# OpenModelPool $VERSION SHA256 Checksums" > "${OUTPUT_DIR}/checksums.txt"
     echo "# Build: $BUILD_TIME" >> "${OUTPUT_DIR}/checksums.txt"
     for f in "${OUTPUT_DIR}"/*.sha256; do
         name=$(basename "${f%.sha256}")

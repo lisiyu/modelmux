@@ -1,4 +1,4 @@
-module github.com/lisiyu/modelmux
+module github.com/lisiyu/openmodelpool
 
 go 1.25.0
 

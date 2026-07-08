@@ -15,7 +15,7 @@ import (
 // Performance Optimization Layer
 // ============================================================
 //
-// This file implements resource optimization for ModelMux Agent:
+// This file implements resource optimization for OpenModelPool Agent:
 // - Memory monitoring & usage tracking
 // - Periodic cleanup of expired data (heartbeats, keys, routes)
 // - sync.Pool for HTTP request/response buffer reuse

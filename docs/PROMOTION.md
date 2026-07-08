@@ -1,4 +1,4 @@
-# ModelMux Agent 推广文案合集
+# OpenModelPool Agent 推广文案合集
 
 ---
 
@@ -6,9 +6,9 @@
 
 ### 标题建议（三选一）
 
-1. **ModelMux Agent — 把 34+ AI 平台塞进一个 API 地址，我造了个去中心化联邦管理网关**
-2. **受够了每接一个 AI 平台就改一套代码？ModelMux Agent 一个地址搞定所有**
-3. **一个人管 34 个 AI 平台，还组了个去中心化联邦网络 — ModelMux Agent v3.1**
+1. **OpenModelPool Agent — 把 34+ AI 平台塞进一个 API 地址，我造了个去中心化联邦管理网关**
+2. **受够了每接一个 AI 平台就改一套代码？OpenModelPool Agent 一个地址搞定所有**
+3. **一个人管 34 个 AI 平台，还组了个去中心化联邦网络 — OpenModelPool Agent v3.1**
 
 ---
 
@@ -27,7 +27,7 @@
 
 更离谱的是，当你有 5 台服务器各跑一个代理，它们之间完全是孤岛 — 互相不知道对方存在，没有协同，没有信誉，没有联邦。
 
-**所以我写了 ModelMux Agent。**
+**所以我写了 OpenModelPool Agent。**
 
 ---
 
@@ -102,15 +102,15 @@ curl https://your-mux.com/v1/chat/completions \
 **Docker 部署（推荐）**
 ```bash
 docker run -d \
-  --name modelmux \
+  --name openmodelpool \
   -p 3000:3000 \
   -v $(pwd)/data:/app/data \
-  ghcr.io/lisiyu/modelmux:latest
+  ghcr.io/lisiyu/openmodelpool:latest
 ```
 
 **二进制部署**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash
 ```
 
 启动后访问 `http://localhost:3000` 进入初始化向导，3 分钟完成全部配置。
@@ -119,7 +119,7 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | b
 
 ### 🌐 在线体验
 
-> 🔗 **GitHub**: https://github.com/lisiyu/modelmux
+> 🔗 **GitHub**: https://github.com/lisiyu/openmodelpool
 >
 > 欢迎 Star ⭐、Fork 🔱、提 Issue 🐛、贡献 PR 🎉
 
@@ -144,21 +144,21 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | b
 
 ### Twitter/X 版（英文，200 字符内）
 
-> 🧩 ModelMux Agent — 1 API endpoint for 34+ AI platforms. Smart routing, auto-fallback, decentralized federation. Go binary, zero deps.
+> 🧩 OpenModelPool Agent — 1 API endpoint for 34+ AI platforms. Smart routing, auto-fallback, decentralized federation. Go binary, zero deps.
 >
-> ⭐ https://github.com/lisiyu/modelmux
+> ⭐ https://github.com/lisiyu/openmodelpool
 >
 > #AI #LLM #OpenSource #Golang
 
 ### 微信朋友圈 / 中文短版
 
-> 造了个工具：**ModelMux Agent** — 一个 API 地址代理 34+ AI 平台（OpenAI/Claude/Gemini/千帆/Coze/NIM…），智能路由自动降级，还搞了个去中心化联邦网络。Go 单二进制，Docker 一键部署。
+> 造了个工具：**OpenModelPool Agent** — 一个 API 地址代理 34+ AI 平台（OpenAI/Claude/Gemini/千帆/Coze/NIM…），智能路由自动降级，还搞了个去中心化联邦网络。Go 单二进制，Docker 一键部署。
 >
-> 🔗 github.com/lisiyu/modelmux
+> 🔗 github.com/lisiyu/openmodelpool
 
 ### Telegram 群发版
 
-> 🤖 **ModelMux Agent v3.1** — 去中心化 AI 模型联邦管理平台
+> 🤖 **OpenModelPool Agent v3.1** — 去中心化 AI 模型联邦管理平台
 >
 > ✅ 34+ 平台统一 OpenAI 兼容 API
 > ✅ 4 种智能路由（优先级/成本/速度/权重）
@@ -166,7 +166,7 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | b
 > ✅ Docker 一键部署，可视化 Admin 面板
 > ✅ v3.2 即将发布：Prometheus + Rate Limiting
 >
-> 🔗 https://github.com/lisiyu/modelmux
+> 🔗 https://github.com/lisiyu/openmodelpool
 
 ---
 
@@ -176,14 +176,14 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | b
 
 ### 方案 A（极简科技风）
 
-- 主标题：**ModelMux Agent**
+- 主标题：**OpenModelPool Agent**
 - 副标题：**One API. 34+ Platforms. Decentralized.**
 - 底部 tag：`Go` · `OpenAI Compatible` · `Smart Routing` · `Federation`
 - 视觉：深色背景 + 节点网络连线图 + 渐变蓝紫色调
 
 ### 方案 B（功能展示风）
 
-- 左侧大标题：**ModelMux Agent**
+- 左侧大标题：**OpenModelPool Agent**
 - 右侧列出核心卖点（用图标）：
   - 🔌 34+ Platforms
   - 🧠 Smart Routing
@@ -195,7 +195,7 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | b
 ### 方案 C（极简口号风）
 
 - 居中大字：**Your AI, Unified.**
-- 下方小字：**ModelMux Agent — Decentralized AI Model Federation Platform**
+- 下方小字：**OpenModelPool Agent — Decentralized AI Model Federation Platform**
 - 背景：深色系 + 微光粒子效果
 
 ---
@@ -206,7 +206,7 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/modelmux/main/install.sh | b
 
 该页面设计为一个独立可部署的 HTML 单页，功能包括：
 
-1. **项目简介区**：ModelMux Agent 核心卖点展示
+1. **项目简介区**：OpenModelPool Agent 核心卖点展示
 2. **邀请链接区**：一键复制当前页面链接
 3. **二维码生成**：使用 qrcode.js CDN 自动生成页面二维码
 4. **社交分享按钮**：

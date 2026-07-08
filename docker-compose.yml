@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  modelmux:
+  openmodelpool:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: modelmux
+    container_name: openmodelpool
     ports:
       - "${MODELmux_PORT:-8000}:8000"
     volumes:

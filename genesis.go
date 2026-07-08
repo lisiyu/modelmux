@@ -18,9 +18,9 @@ import (
 // 这使得网络身份由密码学定义，而非依赖某个 GitHub repo
 
 // GenesisBlock is the immutable network identity configuration.
-// All forks of ModelMux Agent should use the same genesis to stay on the same network.
+// All forks of OpenModelPool Agent should use the same genesis to stay on the same network.
 var GenesisConfig = GenesisBlock{
-	NetworkName:  "modelmux-mainnet",
+	NetworkName:  "openmodelpool-mainnet",
 	GenesisNode:  "mm-JG7pKCdqgU8PBijd4m4CXP",
 	GenesisPubKey: "", // populated at runtime from node identity if this IS the genesis node
 	CreatedAt:    "2026-07-07T00:00:00Z",
@@ -37,7 +37,7 @@ type GenesisBlock struct {
 }
 
 // NetworkID is the SHA256 hash of the GenesisConfig.
-// This is the canonical identifier for the ModelMux Agent mainnet.
+// This is the canonical identifier for the OpenModelPool Agent mainnet.
 var NetworkID string
 
 func init() {

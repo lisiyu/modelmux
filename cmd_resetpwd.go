@@ -27,16 +27,16 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("用法: go run cmd_resetpwd.go <新密码>")
 		fmt.Println("示例: go run cmd_resetpwd.go MyNewPass123")
-		fmt.Println("请在 modelmux 部署目录下执行（含 data/ 子目录的那个）")
+		fmt.Println("请在 openmodelpool 部署目录下执行（含 data/ 子目录的那个）")
 		os.Exit(1)
 	}
 
 	newPwd := os.Args[1]
 
-	// Try CWD first, then fallback to /root/modelmux-deploy
+	// Try CWD first, then fallback to /root/openmodelpool-deploy
 	dataDir := filepath.Join(".", "data")
 	if _, err := os.Stat(filepath.Join(dataDir, "admin.json")); err != nil {
-		dataDir = "/root/modelmux-deploy/data"
+		dataDir = "/root/openmodelpool-deploy/data"
 	}
 	adminFile := filepath.Join(dataDir, "admin.json")
 

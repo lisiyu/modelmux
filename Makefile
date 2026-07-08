@@ -1,8 +1,8 @@
-# ModelMux Makefile
+# OpenModelPool Makefile
 # ─────────────────────────────────────────
 
-BINARY    := modelmux
-MODULE    := github.com/lisiyu/modelmux
+BINARY    := openmodelpool
+MODULE    := github.com/lisiyu/openmodelpool
 GO        := /usr/local/go/bin/go
 GOPROXY   := https://goproxy.cn,direct
 OUTPUT    := dist
@@ -83,7 +83,7 @@ build-windows:
 
 .PHONY: docker docker-push docker-compose
 
-DOCKER_IMAGE := modelmux
+DOCKER_IMAGE := openmodelpool
 DOCKER_TAG   := $(VERSION)
 
 ## 构建 Docker 镜像
@@ -147,7 +147,7 @@ dev:
 
 .PHONY: help
 help:
-	@echo "ModelMux 构建命令"
+	@echo "OpenModelPool 构建命令"
 	@echo ""
 	@echo "  make build            编译当前平台"
 	@echo "  make build-all        编译所有平台 (6个目标)"

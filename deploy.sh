@@ -1,5 +1,5 @@
 #!/bin/bash
-# ModelMux 一键部署脚本
+# OpenModelPool 一键部署脚本
 
 set -e
 
@@ -11,8 +11,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 配置变量
-CONTAINER_NAME="modelmux"
-IMAGE_NAME="modelmux:latest"
+CONTAINER_NAME="openmodelpool"
+IMAGE_NAME="openmodelpool:latest"
 PORT=${PORT:-8080}
 DATA_DIR=${DATA_DIR:-"./data"}
 
@@ -95,7 +95,7 @@ start_container() {
 show_info() {
     echo ""
     echo "=========================================="
-    echo -e "${GREEN}  ModelMux 部署完成！${NC}"
+    echo -e "${GREEN}  OpenModelPool 部署完成！${NC}"
     echo "=========================================="
     echo ""
     echo "  访问地址: http://localhost:$PORT"
@@ -121,7 +121,7 @@ show_info() {
 main() {
     echo ""
     echo "=========================================="
-    echo "  ModelMux 一键部署"
+    echo "  OpenModelPool 一键部署"
     echo "=========================================="
     echo ""
     

@@ -1,4 +1,4 @@
-# ModelMux Agent v3.2.0 — 全面回归测试 & 安全性能审查报告
+# OpenModelPool Agent v3.2.0 — 全面回归测试 & 安全性能审查报告
 
 **测试日期**: 2026-07-07  
 **版本**: v3.2.0 (commit 0581556)  
@@ -297,7 +297,7 @@ info := map[string]any{
 allowedOrigins := cfg.Get("cors_allowed_origins", "*")
 ```
 
-**影响**: 默认情况下，任何来源的网页都可以跨域调用 ModelMux Agent API。如果 admin 在浏览器中登录了 ModelMux Agent，恶意网站可以利用 CORS 通配符发起 CSRF 风格的攻击（虽然无法读取响应，但可以发送请求）。
+**影响**: 默认情况下，任何来源的网页都可以跨域调用 OpenModelPool Agent API。如果 admin 在浏览器中登录了 OpenModelPool Agent，恶意网站可以利用 CORS 通配符发起 CSRF 风格的攻击（虽然无法读取响应，但可以发送请求）。
 
 **修复建议**: 默认值应设为空字符串或要求显式配置；至少在文档中提醒用户配置白名单。
 
@@ -639,7 +639,7 @@ func (t *Tracker) ProviderStats(days int) map[string]map[string]any {
 
 ### 🏆 总评分: **7.7 / 10**
 
-ModelMux Agent v3.2.0 是一个功能丰富、架构清晰的 AI 网关。主要改进方向集中在：
+OpenModelPool Agent v3.2.0 是一个功能丰富、架构清晰的 AI 网关。主要改进方向集中在：
 1. **安全性加固**（特别是密钥管理和文件权限）
 2. **性能优化**（存储引擎升级和连接池复用）
 3. **生产就绪**（错误处理脱敏、请求限制、监控完善）

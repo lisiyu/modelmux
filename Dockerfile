@@ -15,7 +15,7 @@ COPY *.html ./
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" \
     -trimpath \
-    -o modelmux .
+    -o openmodelpool .
 
 # ─── 运行阶段 ───
 FROM alpine:latest
@@ -23,17 +23,17 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates tzdata curl
 
 # 创建非 root 用户
-RUN addgroup -S modelmux && adduser -S modelmux -G modelmux
+RUN addgroup -S openmodelpool && adduser -S openmodelpool -G openmodelpool
 
 WORKDIR /app
 
-COPY --from=builder /build/modelmux .
+COPY --from=builder /build/openmodelpool .
 COPY --from=builder /build/*.html ./
 
 # 数据目录
-RUN mkdir -p /app/data && chown -R modelmux:modelmux /app
+RUN mkdir -p /app/data && chown -R openmodelpool:openmodelpool /app
 
-USER modelmux
+USER openmodelpool
 
 EXPOSE 8000
 
@@ -41,5 +41,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-ENTRYPOINT ["./modelmux"]
+ENTRYPOINT ["./openmodelpool"]
 CMD ["-data", "/app/data"]

@@ -1,8 +1,8 @@
-# ModelMux Agent v3.0 路线图：去中心化联邦网络
+# OpenModelPool Agent v3.0 路线图：去中心化联邦网络
 
 ## 核心愿景
 
-多个独立部署的 modelmux 实例组成去中心化的 AI 模型联邦。API Key 永远不出本机，共享的是"代理中继能力"。GitHub 仓库作为权威 Registry，Gossip 协议提供实时同步，社区联合治理准入与信誉。
+多个独立部署的 openmodelpool 实例组成去中心化的 AI 模型联邦。API Key 永远不出本机，共享的是"代理中继能力"。GitHub 仓库作为权威 Registry，Gossip 协议提供实时同步，社区联合治理准入与信誉。
 
 ---
 
@@ -48,7 +48,7 @@
 ### 1.1 节点身份系统
 
 **NodeID 生成：**
-- 每个 modelmux 实例生成 Ed25519 密钥对
+- 每个 openmodelpool 实例生成 Ed25519 密钥对
 - NodeID = `"mm-" + base58(pubkey[:16])`
 - 私钥存储：`data/node.key`（AES-256-GCM 加密）
 - 公钥用于签名验证，节点间通信身份认证
@@ -83,7 +83,7 @@
 
 **核心设计：零额外部署成本**
 ```
-modelmux/ (GitHub 仓库)
+openmodelpool/ (GitHub 仓库)
 ├── federation/
 │   ├── trust_pool.json      ← 活跃节点列表（客户端读取）
 │   ├── pending/             ← 待审核申请
@@ -92,8 +92,8 @@ modelmux/ (GitHub 仓库)
 ```
 
 **客户端三层获取策略（自动降级）：**
-1. GitHub Raw：`raw.githubusercontent.com/lisiyu/modelmux/main/federation/trust_pool.json`
-2. GitHub Pages：`lisiyu.github.io/modelmux/federation/trust_pool.json`
+1. GitHub Raw：`raw.githubusercontent.com/lisiyu/openmodelpool/main/federation/trust_pool.json`
+2. GitHub Pages：`lisiyu.github.io/openmodelpool/federation/trust_pool.json`
 3. 已知活跃节点 P2P 互备
 4. 本地缓存兜底
 
@@ -101,11 +101,11 @@ modelmux/ (GitHub 仓库)
 
 **管理员 CLI：**
 ```bash
-modelmux admin network pending          # 查看待审核
-modelmux admin network verify mm-xxx    # 验证节点连通性
-modelmux admin network approve mm-xxx   # 批准 → 自动 commit + push
-modelmux admin network reject mm-xxx    # 拒绝
-modelmux admin network revoke mm-xxx    # 撤销已加入节点
+openmodelpool admin network pending          # 查看待审核
+openmodelpool admin network verify mm-xxx    # 验证节点连通性
+openmodelpool admin network approve mm-xxx   # 批准 → 自动 commit + push
+openmodelpool admin network reject mm-xxx    # 拒绝
+openmodelpool admin network revoke mm-xxx    # 撤销已加入节点
 ```
 
 ### 1.3 Gossip 传播协议
@@ -143,7 +143,7 @@ func gossipLoop() {
 
 **请求链路：**
 ```
-用户请求 → 本地 modelmux → 选择路由：
+用户请求 → 本地 openmodelpool → 选择路由：
   ├─ 本地 Provider → 直接调用 → 返回结果
   └─ 远程共享 Provider → 请求发给远端 Node（带签名）
        → 远端 Node 验证签名
@@ -253,7 +253,7 @@ Body: { 标准 OpenAI 请求格式 }
 ### 2.3 GitHub 账户验证
 
 **验证流程：**
-1. `modelmux network verify-github` → 生成 challenge token
+1. `openmodelpool network verify-github` → 生成 challenge token
 2. 打开浏览器 → GitHub OAuth 授权
 3. 验证：账户年龄 >30 天、至少 1 个公开仓库
 4. 绑定 GitHub 身份到 NodeID（签名写入节点配置）
@@ -330,23 +330,23 @@ Body: { 标准 OpenAI 请求格式 }
 
 ```bash
 # 节点管理
-modelmux network init              # 初始化节点身份
-modelmux network status            # 查看节点状态
-modelmux network request-join      # 申请加入联邦
-modelmux network leave             # 退出联邦
+openmodelpool network init              # 初始化节点身份
+openmodelpool network status            # 查看节点状态
+openmodelpool network request-join      # 申请加入联邦
+openmodelpool network leave             # 退出联邦
 
 # 联邦信息
-modelmux network nodes             # 列出所有节点
-modelmux network providers         # 列出联邦所有可用 Provider
-modelmux network reputation        # 查看信誉详情
+openmodelpool network nodes             # 列出所有节点
+openmodelpool network providers         # 列出联邦所有可用 Provider
+openmodelpool network reputation        # 查看信誉详情
 
 # 投票与治理
-modelmux network vote <node_id>    # 对新节点投票
-modelmux network verify-github     # 验证 GitHub 身份
+openmodelpool network vote <node_id>    # 对新节点投票
+openmodelpool network verify-github     # 验证 GitHub 身份
 
 # 积分与消息
-modelmux network balance           # 查看积分余额
-modelmux network message <target>  # 发送点对点消息
+openmodelpool network balance           # 查看积分余额
+openmodelpool network message <target>  # 发送点对点消息
 ```
 
 ---
@@ -366,7 +366,7 @@ modelmux network message <target>  # 发送点对点消息
 **分享卡片（自动生成）：**
 ```
 ┌────────────────────────────────┐
-│  🌐 ModelMux Agent Federation       │
+│  🌐 OpenModelPool Agent Federation       │
 │                                │
 │  @ChalLee 的节点               │
 │  ├─ 已贡献 3 个 Provider       │
