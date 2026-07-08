@@ -484,6 +484,40 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := pm.GetRaw(id)
+	
+	// Check if testing a specific key by key_id query parameter
+	keyID := r.URL.Query().Get("key_id")
+	if keyID != "" {
+		// Find the specific key
+		var targetKey *APIKeyConfig
+		for i := range p.APIKeys {
+			if p.APIKeys[i].ID == keyID {
+				targetKey = &p.APIKeys[i]
+				break
+			}
+		}
+		if targetKey == nil {
+			writeError(w, 404, fmt.Sprintf("key '%s' not found", keyID))
+			return
+		}
+		// Decrypt the key for testing
+		decryptedKey, err := decryptAPIKey(targetKey.Key)
+		if err != nil {
+			writeError(w, 500, "failed to decrypt key")
+			return
+		}
+		result := testConnectionWithKey(p, decryptedKey)
+		// Sanitize error messages
+		if errMsg, ok := result["error"].(string); ok && errMsg != "" {
+			result["error"] = "upstream error"
+		}
+		result["key_id"] = keyID
+		result["key_alias"] = targetKey.Alias
+		writeJSON(w, 200, result)
+		return
+	}
+	
+	// Default: test with effective key
 	result := testConnection(p)
 	// Sanitize error messages to avoid leaking internal details
 	if errMsg, ok := result["error"].(string); ok && errMsg != "" {
@@ -491,6 +525,87 @@ func handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, result)
 }
+
+// handleTestAllKeys tests all API keys for a provider and returns individual results
+func handleTestAllKeys(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := checkProviderAccess(r, id); !ok {
+		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
+		return
+	}
+	p, _ := pm.GetRaw(id)
+	
+	if len(p.APIKeys) == 0 {
+		writeJSON(w, 200, map[string]any{
+			"success": false,
+			"error":   "no API keys configured",
+			"results": []any{},
+		})
+		return
+	}
+	
+	results := make([]map[string]any, 0, len(p.APIKeys))
+	allSuccess := true
+	
+	for i, key := range p.APIKeys {
+		keyResult := map[string]any{
+			"index":    i + 1,
+			"key_id":   key.ID,
+			"alias":    key.Alias,
+			"enabled":  key.Enabled,
+		}
+		
+		if !key.Enabled {
+			keyResult["success"] = false
+			keyResult["error"] = "key is disabled"
+			allSuccess = false
+			results = append(results, keyResult)
+			continue
+		}
+		
+		// Decrypt the key for testing
+		decryptedKey, err := decryptAPIKey(key.Key)
+		if err != nil {
+			keyResult["success"] = false
+			keyResult["error"] = "failed to decrypt key"
+			allSuccess = false
+			results = append(results, keyResult)
+			continue
+		}
+		
+		// Test this specific key
+		testResult := testConnectionWithKey(p, decryptedKey)
+		keyResult["success"] = testResult["success"]
+		if errMsg, ok := testResult["error"].(string); ok && errMsg != "" {
+			keyResult["error"] = "upstream error"
+			allSuccess = false
+		}
+		if msg, ok := testResult["message"].(string); ok {
+			keyResult["message"] = msg
+		}
+		
+		results = append(results, keyResult)
+	}
+	
+	response := map[string]any{
+		"success": allSuccess,
+		"results": results,
+		"total":   len(results),
+	}
+	
+	if !allSuccess {
+		failedCount := 0
+		for _, r := range results {
+			if s, ok := r["success"].(bool); !ok || !s {
+				failedCount++
+			}
+		}
+		response["failed_count"] = failedCount
+	}
+	
+	writeJSON(w, 200, response)
+}
+
 
 func handleGetProviderModels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

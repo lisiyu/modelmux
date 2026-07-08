@@ -202,6 +202,7 @@ func main() {
 	mux.HandleFunc("PUT /api/providers/{id}", withConsumerOrAdminAuth(handleUpdateProvider))
 	mux.HandleFunc("DELETE /api/providers/{id}", withConsumerOrAdminAuth(handleDeleteProvider))
 	mux.HandleFunc("POST /api/providers/{id}/test", withConsumerOrAdminAuth(handleTestProvider))
+	mux.HandleFunc("POST /api/providers/{id}/test-all-keys", withConsumerOrAdminAuth(handleTestAllKeys))
 	mux.HandleFunc("GET /api/providers/{id}/models", withConsumerOrAdminAuth(handleGetProviderModels))
 	mux.HandleFunc("POST /api/providers/{id}/sync-url", withConsumerOrAdminAuth(handleSyncProviderURL))
 	mux.HandleFunc("POST /api/providers/{id}/sync-models", withConsumerOrAdminAuth(handleSyncModels))
@@ -304,6 +305,7 @@ func main() {
 
 	// P2P Shared Network API (Phase 1) — decentralized relay
 	mux.HandleFunc("GET /api/network/status", handleNetworkStatus)
+	mux.HandleFunc("GET /api/network/stats", handleNetworkStats)
 	mux.HandleFunc("POST /api/network/consent", rateLimitByIP(5, "network_consent")(handleNetworkConsent)) // SA-10
 	mux.HandleFunc("GET /api/network/disclaimer", handleNetworkDisclaimer)
 	mux.HandleFunc("POST /api/network/enable", withAuth(handleNetworkEnable))

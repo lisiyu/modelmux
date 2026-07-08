@@ -872,23 +872,34 @@ func testConnection(p Provider) map[string]any {
 	if p.APIKey == "" && len(p.APIKeys) > 0 {
 		p.APIKey = p.GetEffectiveAPIKey()
 	}
+	return testConnectionWithKey(p, p.APIKey)
+}
 
-	switch p.Type {
+// testConnectionWithKey tests the provider connection with a specific API key.
+// If keyOverride is provided, it will be used instead of p.APIKey.
+func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
+	// Create a copy of the provider to avoid modifying the original
+	testProvider := p
+	if keyOverride != "" {
+		testProvider.APIKey = keyOverride
+	}
+
+	switch testProvider.Type {
 	case "coze":
-		token := p.APIKey
+		token := testProvider.APIKey
 		if token == "" {
 			token = cfg.Get("coze_api_token", "")
 		}
 		if token == "" {
 			return map[string]any{"success": false, "error": "Coze PAT not configured (set API Key in provider config)"}
 		}
-		baseURL := p.BaseURL
+		baseURL := testProvider.BaseURL
 		if baseURL == "" {
 			baseURL = "https://api.coze.cn"
 		}
 		req, _ := http.NewRequest("GET", baseURL+"/v1/bots?page_index=0&page_size=1", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
-		client := proxyHTTPClient(p, 15 * time.Second)
+		client := proxyHTTPClient(testProvider, 15 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
@@ -900,16 +911,16 @@ func testConnection(p Provider) map[string]any {
 		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}
 
 	case "sider":
-		if p.APIKey == "" {
+		if testProvider.APIKey == "" {
 			return map[string]any{"success": false, "error": "Sider token not configured"}
 		}
-		h := siderBuildHeaders(p.APIKey)
+		h := siderBuildHeaders(testProvider.APIKey)
 		payload := siderBuildPayload("auto", []ChatMessage{{Role: "user", Content: "hi"}}, false)
 		payload["prompt"] = "ping"
 		body, _ := json.Marshal(payload)
 		req, _ := http.NewRequest("POST", siderChatURL, bytes.NewReader(body))
 		req.Header = h
-		client := proxyHTTPClient(p, 30 * time.Second)
+		client := proxyHTTPClient(testProvider, 30 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}
@@ -924,7 +935,7 @@ func testConnection(p Provider) map[string]any {
 		return map[string]any{"success": true, "message": "Sider token valid"}
 
 	case "anthropic":
-		if p.APIKey == "" {
+		if testProvider.APIKey == "" {
 			return map[string]any{"success": false, "error": "Anthropic API key not configured"}
 		}
 		// Use a lightweight messages request to verify connectivity
@@ -934,11 +945,11 @@ func testConnection(p Provider) map[string]any {
 			"messages":   []map[string]any{{"role": "user", "content": "hi"}},
 		}
 		testBody, _ := json.Marshal(testPayload)
-		testReq, _ := http.NewRequest("POST", p.BaseURL+"/v1/messages", bytes.NewReader(testBody))
+		testReq, _ := http.NewRequest("POST", testProvider.BaseURL+"/v1/messages", bytes.NewReader(testBody))
 		testReq.Header.Set("Content-Type", "application/json")
-		testReq.Header.Set("x-api-key", p.APIKey)
+		testReq.Header.Set("x-api-key", testProvider.APIKey)
 		testReq.Header.Set("anthropic-version", "2023-06-01")
-		testClient := proxyHTTPClient(p, 15*time.Second)
+		testClient := proxyHTTPClient(testProvider, 15*time.Second)
 		testResp, err := testClient.Do(testReq)
 		if err != nil {
 			return map[string]any{"success": false, "error": err.Error()}

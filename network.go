@@ -523,6 +523,76 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 	}
 }
 
+// GetNetworkStats returns aggregated network statistics including provider and consumer data.
+func (nm *NetworkManager) GetNetworkStats() map[string]any {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+
+	st := nm.config.Stats
+	totalReqs := st.RequestsRelayed + st.RequestsReceived
+	successRate := 0.0
+	if totalReqs > 0 {
+		successRate = float64(st.RelaySuccess) / float64(totalReqs)
+	}
+
+	uptime := int64(0)
+	if nm.config.Mode == NetworkModeShared && !nm.startTime.IsZero() {
+		uptime = int64(time.Since(nm.startTime).Seconds())
+	}
+
+	// Count active consumers
+	activeUsers := 0
+	if multiUser != nil {
+		for _, c := range multiUser.ListConsumers() {
+			if c.Enabled {
+				activeUsers++
+			}
+		}
+	}
+
+	// Calculate total quota from all providers
+	var totalQuota int64
+	if pm != nil {
+		for _, p := range pm.GetAllRaw() {
+			if !p.Enabled {
+				continue
+			}
+			if p.TokenLimit > 0 {
+				totalQuota += p.TokenLimit
+			}
+			for _, k := range p.APIKeys {
+				if k.Enabled && k.Quota > 0 {
+					totalQuota += k.Quota
+				}
+			}
+		}
+	}
+
+	return map[string]any{
+		"total_nodes":     len(nm.config.Peers) + 1, // peers + self
+		"online_nodes":    nm.countOnlinePeers(),
+		"active_users":    activeUsers,
+		"total_requests":  totalReqs,
+		"relay_requests":  st.RequestsRelayed,
+		"success_rate":    successRate,
+		"total_quota":     totalQuota,
+		"models_shared":   st.TotalModelsShared,
+		"uptime":          uptime,
+	}
+}
+
+// countOnlinePeers returns the number of peers seen within the last 5 minutes.
+func (nm *NetworkManager) countOnlinePeers() int {
+	cutoff := time.Now().Add(-5 * time.Minute)
+	count := 0
+	for _, p := range nm.config.Peers {
+		if t, err := time.Parse(time.RFC3339, p.LastSeen); err == nil && t.After(cutoff) {
+			count++
+		}
+	}
+	return count
+}
+
 func (nm *NetworkManager) IsSharedMode() bool {
 	nm.mu.RLock()
 	defer nm.mu.RUnlock()
@@ -706,6 +776,18 @@ func handleNetworkStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, netMgr.GetStatus())
+}
+
+func handleNetworkStats(w http.ResponseWriter, r *http.Request) {
+	if netMgr == nil {
+		writeJSON(w, 200, map[string]any{
+			"total_nodes": 1, "online_nodes": 1, "active_users": 0,
+			"total_requests": 0, "relay_requests": 0, "success_rate": 0.0,
+			"total_quota": 0, "models_shared": 0, "uptime": 0,
+		})
+		return
+	}
+	writeJSON(w, 200, netMgr.GetNetworkStats())
 }
 
 func handleNetworkConsent(w http.ResponseWriter, r *http.Request) {

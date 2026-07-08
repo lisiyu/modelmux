@@ -1045,6 +1045,11 @@ func (m *ProviderManager) UpdateAPIKey(providerID, keyID string, updates map[str
 					p.APIKeys[i].ExpiresAt = s
 				}
 			}
+			if v, ok := updates["alias"]; ok {
+				if s, ok := v.(string); ok {
+					p.APIKeys[i].Alias = s
+				}
+			}
 			p.APIKeys[i].UpdatedAt = time.Now().Format(time.RFC3339)
 			m.providers[providerID] = p
 			m.save()

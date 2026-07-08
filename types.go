@@ -123,6 +123,7 @@ type ModelDef struct {
 // APIKeyConfig represents a single API key with its own quota and access control.
 type APIKeyConfig struct {
 	ID            string `json:"id"`              // unique identifier
+	Alias         string `json:"alias,omitempty"` // human-readable alias (optional)
 	Key           string `json:"key"`             // API key (encrypted at rest)
 	Quota         int64  `json:"quota"`           // total quota (tokens), 0=unlimited
 	Used          int64  `json:"used"`            // used quota

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -135,3 +136,17 @@ func IsEncrypted(s string) bool {
 
 // Ensure no unused import errors
 var _ = errors.New
+// decryptAPIKey decrypts an API key if it's encrypted, otherwise returns it as-is.
+func decryptAPIKey(key string) (string, error) {
+	if !IsEncrypted(key) {
+		return key, nil
+	}
+	if enc == nil {
+		return "", fmt.Errorf("encryptor not initialized")
+	}
+	decrypted := enc.Decrypt(key)
+	if decrypted == "" {
+		return "", fmt.Errorf("failed to decrypt API key")
+	}
+	return decrypted, nil
+}

@@ -457,6 +457,7 @@ select.form-input{appearance:none;cursor:pointer}
     <!-- 📡 API 访问地址（个人代理模式） -->
     <div style="background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px;padding:14px 18px;margin-bottom:16px">
       <div style="font-size:14px;font-weight:600;margin-bottom:12px">📡 API 访问地址</div>
+      <div id="nodeQuotaInfo" style="padding:8px 12px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--text-secondary)">🔄 加载节点额度信息...</div>
       <div class="section-note" style="margin-bottom:12px">个人代理模式下，外部应用通过以下地址访问您配置的 Provider。共享网络的 P2P 地址请在「共享网络」面板查看。</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
@@ -829,6 +830,37 @@ select.form-input{appearance:none;cursor:pointer}
           <div>
             <div class="status-label">贡献积分</div>
             <div class="status-value" id="netPoints">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 网络统计面板 -->
+      <div id="networkStatsPanel" style="margin-bottom:16px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)">📊 全网统计</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+          <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;text-align:center">
+            <div style="font-size:22px;font-weight:bold;color:var(--primary)" id="statTotalNodes">-</div>
+            <div style="font-size:11px;color:var(--text-muted)">总节点数</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;text-align:center">
+            <div style="font-size:22px;font-weight:bold;color:var(--success)" id="statOnlineNodes">-</div>
+            <div style="font-size:11px;color:var(--text-muted)">在线节点</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;text-align:center">
+            <div style="font-size:22px;font-weight:bold;color:var(--primary)" id="statActiveUsers">-</div>
+            <div style="font-size:11px;color:var(--text-muted)">活跃用户</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;text-align:center">
+            <div style="font-size:22px;font-weight:bold;color:var(--primary)" id="statTotalRequests">-</div>
+            <div style="font-size:11px;color:var(--text-muted)">总请求数</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;text-align:center">
+            <div style="font-size:22px;font-weight:bold;color:var(--success)" id="statSuccessRate">-</div>
+            <div style="font-size:11px;color:var(--text-muted)">成功率</div>
+          </div>
+          <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;text-align:center">
+            <div style="font-size:22px;font-weight:bold;color:var(--primary)" id="statTotalQuota">-</div>
+            <div style="font-size:11px;color:var(--text-muted)">全网额度</div>
           </div>
         </div>
       </div>
@@ -1587,7 +1619,7 @@ function renderProviders() {
         <div class="provider-info">
           <div class="provider-name"><span class="status-dot ${enabled?'green':'red'}" style="width:8px;height:8px"></span> ${p.name} <span class="badge badge-blue">${p.type}</span> ${accessBadge}</div>
           <div class="provider-url">${p.base_url}</div>
-          <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
+          <div class="provider-meta">${keyStatus} <span>· ${models.length} 个模型</span> <span>· 📊 额度: ${p.token_limit > 0 ? p.token_limit.toLocaleString() + ' tokens' : '无限'}</span> <span>· 优先级 <input type="number" class="priority-input" value="${p.priority||5}" min="1" max="99" onclick="event.stopPropagation()" onchange="updatePriority('${p.id}', this.value)" title="数字越小优先级越高"></span></div>
         </div>
         <div class="provider-actions">
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleApiKeys('${p.id}')" title="管理 API Keys">🔑 Keys${keyCount > 0 ? '('+keyCount+')' : ''}</button>
@@ -1880,12 +1912,14 @@ function setPersonalApiUrls() {
   if (lanEl) lanEl.value = window.location.origin + '/v1';
   const pubEl = document.getElementById('personalPublicUrl');
   const hintEl = document.getElementById('personalPublicUrlHint');
-  // Check tunnel URL from federation status or tunnel endpoint
-  authFetch('/api/federation/status').then(r => r.json()).then(d => {
-    if (d.tunnel_url) {
-      if (pubEl) pubEl.value = d.tunnel_url + '/v1';
+  // Check tunnel URL from federation config (returns tunnel_url field)
+  authFetch('/api/federation/config').then(r => r.json()).then(d => {
+    const tunnelUrl = d.tunnel_url || '';
+    const tunnelDomain = d.tunnel_domain || '';
+    if (tunnelUrl) {
+      if (pubEl) pubEl.value = tunnelUrl + '/v1';
       if (hintEl) {
-        if (d.custom_domain) {
+        if (tunnelDomain) {
           hintEl.textContent = '已绑定自定义域名，地址固定不变';
         } else {
           hintEl.textContent = '当前使用 Cloudflare 随机隧道地址，每次重启变化';
@@ -2136,14 +2170,14 @@ async function loadApiKeys(pid) {
     if (!keys.length) {
       container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:8px">未配置多 Key，点击下方按钮添加</div>';
     } else {
-      let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+      let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>操作</th><th>测试</th></tr></thead><tbody>';
       for (const k of keys) {
         const quotaText = k.quota > 0 ? (k.used + '/' + k.quota) : '无限';
         const accessLabel = k.access_control === 'public' ? '🌐 公共' : k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
         const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
         const expiresText = k.expires_at ? '<br><small style="color:var(--text-muted)">过期: ' + new Date(k.expires_at).toLocaleDateString('zh-CN') + '</small>' : '';
         html += '<tr>';
-        html += '<td style="font-family:monospace">' + k.key + '</td>';
+        html += '<td style="font-family:monospace">' + (k.alias || k.key.substring(0, 8) + '...') + '</td>';
         html += '<td>' + quotaText + '<br><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:1px 6px;margin-top:2px" onclick="resetKeyQuota(\'' + pid + '\',\'' + k.id + '\')">重置</button></td>';
         html += '<td>' + accessLabel + '</td>';
         html += '<td>' + (k.priority || 1) + '</td>';
@@ -2152,19 +2186,21 @@ async function loadApiKeys(pid) {
         html += '<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="toggleKeyEnabled(\'' + pid + '\',\'' + k.id + '\',' + !k.enabled + ')">' + (k.enabled ? '禁用' : '启用') + '</button> ';
         html += '<button class="btn btn-sm btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteApiKey(\'' + pid + '\',\'' + k.id + '\')">删除</button>';
         html += '</td>';
+        html += '<td><button class="btn btn-sm btn-secondary" style="font-size:10px;padding:2px 6px" onclick="testSingleKey(\'' + pid + '\',\'' + k.id + '\')">测试</button></td>';
         html += '</tr>';
       }
       html += '</tbody></table>';
       container.innerHTML = html;
     }
     // Add key button
-    container.innerHTML += '<div style="margin-top:8px;text-align:right"><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + pid + '\')">+ 添加 API Key</button></div>';
+    container.innerHTML += '<div style="margin-top:8px;display:flex;justify-content:space-between"><button class="btn btn-secondary btn-sm" onclick="testAllKeys(\'' + pid + '\')">🧪 测试全部 Key</button><button class="btn btn-primary btn-sm" onclick="showAddApiKey(\'' + pid + '\')">+ 添加 API Key</button></div>';
   } catch(e) {
     container.innerHTML = '<div style="color:var(--error)">加载失败: ' + e.message + '</div>';
   }
 }
 
 async function showAddApiKey(pid) {
+  const alias = prompt('请输入别名（可选，用于标识此Key）:', '') || '';
   const key = prompt('请输入 API Key:');
   if (!key) return;
   const quota = parseInt(prompt('额度限制 (tokens, 0=无限):', '0'), 10) || 0;
@@ -2173,7 +2209,7 @@ async function showAddApiKey(pid) {
   try {
     const r = await authFetch('/api/providers/' + pid + '/keys', {
       method: 'POST',
-      body: JSON.stringify({ key: key, quota: quota, access_control: access, priority: priority, enabled: true })
+      body: JSON.stringify({ key: key, alias: alias, quota: quota, access_control: access, priority: priority, enabled: true })
     });
     const d = await r.json();
     if (d.success) {
@@ -2215,6 +2251,54 @@ async function resetKeyQuota(pid, keyId) {
     await loadApiKeys(pid);
   } catch(e) { toast('重置失败: ' + e.message, 'error'); }
 }
+
+async function testSingleKey(pid, keyId) {
+  toast('正在测试...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test?key_id=' + keyId, {method:'POST'});
+    const d = await r.json();
+    toast(d.success ? '✅ Key 可用' : '❌ Key 不可用: ' + (d.error||''), d.success ? 'success' : 'error');
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+async function testAllKeys(pid) {
+  toast('正在测试所有 Key...', 'info');
+  try {
+    const r = await authFetch('/api/providers/' + pid + '/test-all-keys', {method:'POST'});
+    const d = await r.json();
+    if (!d.results || !d.results.length) { toast('未配置任何 Key', 'error'); return; }
+    let msg = d.results.map(k => {
+      let status = k.success ? '✅' : '❌';
+      let label = k.alias || ('Key#' + k.index);
+      return status + ' ' + label + (k.error ? ': ' + k.error : '');
+    }).join('\n');
+    alert('Key 测试结果:\n' + msg);
+  } catch(e) { toast('测试失败: ' + e.message, 'error'); }
+}
+
+
+// Load node quota info for personal proxy section
+async function loadNodeQuotaInfo() {
+  const el = document.getElementById('nodeQuotaInfo');
+  if (!el) return;
+  try {
+    const r = await authFetch('/api/network/status');
+    const d = await r.json();
+    if (d.enabled) {
+      const cp = d.contribution_points || 0;
+      const quota = cp > 0 ? (cp * 10).toLocaleString() + ' tokens' : '需先积累贡献积分';
+      el.innerHTML = '🌐 节点可用额度: ' + quota + ' <span style="margin-left:12px">📡 已广播到网络</span>';
+    } else {
+      el.innerHTML = '🌐 节点可用额度: 本地模式（未加入共享网络）';
+      el.style.background = 'rgba(108,99,255,.04)';
+      el.style.borderColor = 'rgba(108,99,255,.12)';
+    }
+  } catch(e) {
+    el.innerHTML = '🌐 节点额度: 获取失败';
+  }
+}
+// Call on page load
+setTimeout(loadNodeQuotaInfo, 1000);
 
 // ============================================================
 // Federation (v3.0)
@@ -3955,6 +4039,43 @@ if (authToken) {
       try { await loadNetworkStatus(); } catch(e) {
         console.error('网络状态刷新失败:', e);
         clearInterval(_netPollTimer); _netPollTimer = null;
+      }
+    }, 30000);
+
+    // Network stats dashboard
+    function formatNetNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+      return (num || 0).toString();
+    }
+    async function loadNetworkStats() {
+      try {
+        const r = await authFetch('/api/network/stats');
+        if (!r.ok) return;
+        const d = await r.json();
+        const el = (id) => document.getElementById(id);
+        if (el('statTotalNodes')) el('statTotalNodes').textContent = d.total_nodes || 0;
+        if (el('statOnlineNodes')) el('statOnlineNodes').textContent = d.online_nodes || 0;
+        if (el('statActiveUsers')) el('statActiveUsers').textContent = d.active_users || 0;
+        if (el('statTotalRequests')) el('statTotalRequests').textContent = formatNetNumber(d.total_requests || 0);
+        if (el('statSuccessRate')) el('statSuccessRate').textContent = ((d.success_rate || 0) * 100).toFixed(1) + '%';
+        if (el('statTotalQuota')) el('statTotalQuota').textContent = formatNetNumber(d.total_quota || 0);
+      } catch(e) {
+        console.error('Failed to load network stats:', e);
+      }
+    }
+    // Initial load + periodic refresh
+    if (networkStatus && networkStatus.mode === 'shared') {
+      loadNetworkStats();
+    }
+    let _statsPollTimer = setInterval(async () => {
+      try {
+        if (networkStatus && networkStatus.mode === 'shared') {
+          await loadNetworkStats();
+        }
+      } catch(e) {
+        console.error('Network stats refresh failed:', e);
+        clearInterval(_statsPollTimer); _statsPollTimer = null;
       }
     }, 30000);
 
