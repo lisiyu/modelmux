@@ -868,6 +868,11 @@ func strPtr(s string) *string { return &s }
 
 // testConnection tests a provider's API connectivity.
 func testConnection(p Provider) map[string]any {
+	// Multi-key migration: if legacy APIKey is empty, try APIKeys array
+	if p.APIKey == "" && len(p.APIKeys) > 0 {
+		p.APIKey = p.GetEffectiveAPIKey()
+	}
+
 	switch p.Type {
 	case "coze":
 		token := p.APIKey
@@ -994,6 +999,10 @@ func testConnection(p Provider) map[string]any {
 
 // fetchRemoteModels fetches model list from an OpenAI-compatible provider.
 func fetchRemoteModels(p Provider) []map[string]string {
+	// Multi-key migration: if legacy APIKey is empty, try APIKeys array
+	if p.APIKey == "" && len(p.APIKeys) > 0 {
+		p.APIKey = p.GetEffectiveAPIKey()
+	}
 	if p.Type != "openai_compatible" || p.APIKey == "" {
 		return nil
 	}

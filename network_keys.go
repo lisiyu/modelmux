@@ -542,14 +542,60 @@ func handleNetworkKeyIssue(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/network/keys (JWT) — list all issued keys
+// GET /api/network/keys (JWT) — list all issued keys with type classification
 func handleNetworkKeyList(w http.ResponseWriter, r *http.Request) {
 	if !netMgr.IsSharedMode() {
 		writeJSON(w, 200, map[string]any{"keys": []any{}, "message": "shared network not active"})
 		return
 	}
 	keys := keyStore.GetAllKeys()
-	writeJSON(w, 200, map[string]any{"keys": keys, "count": len(keys)})
+
+	// Classify keys by type
+	trialKeys := []any{}
+	privateKeys := []any{}
+	for _, k := range keys {
+		keyType := classifyKeyType(k.Key)
+		entry := map[string]any{
+			"key":         k.Key,
+			"consumer_id": k.ConsumerID,
+			"payload":     k.Payload,
+			"issued_at":   k.IssuedAt,
+			"revoked":     k.Revoked,
+			"key_type":    keyType,
+		}
+		switch keyType {
+		case "trial":
+			trialKeys = append(trialKeys, entry)
+		default:
+			privateKeys = append(privateKeys, entry)
+		}
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"keys":       keys,
+		"count":      len(keys),
+		"by_type": map[string]any{
+			"trial":   trialKeys,
+			"private": privateKeys,
+		},
+	})
+}
+
+// classifyKeyType determines the type of a mk_ key from its format prefix
+func classifyKeyType(key string) string {
+	if strings.HasPrefix(key, "mk_trial_") {
+		return "trial"
+	}
+	if strings.HasPrefix(key, "mk_open_global_") {
+		return "global"
+	}
+	if strings.HasPrefix(key, "mk_open_") {
+		return "open"
+	}
+	if strings.HasPrefix(key, "mk_") {
+		return "private"
+	}
+	return "unknown"
 }
 
 // DELETE /api/network/keys/{consumer_id} (JWT) — revoke a key

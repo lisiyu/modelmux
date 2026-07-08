@@ -140,14 +140,6 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:4px">个人使用：直接调用此地址访问您配置的模型</div>
     </div>
-    <div class="form-group" id="networkUrlGroup" style="display:none">
-      <label class="form-label">🌐 共享网络 API 接口地址</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input class="form-input" id="networkApiUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer;border:1px solid rgba(108,99,255,.3)" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')">
-        <button class="btn btn-secondary btn-sm" onclick="copyNetworkUrl()">📋 复制</button>
-      </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">共享网络：其他节点通过此地址访问您的模型能力（通过去中心化 relay 转发）</div>
-    </div>
     <div class="form-group"><label class="form-label">Proxy API Key</label>
       <div style="display:flex;gap:8px">
         <input class="form-input" id="proxyApiKey" placeholder="留空表示不启用认证" style="flex:1">
@@ -461,6 +453,34 @@ select.form-input{appearance:none;cursor:pointer}
 
   <div class="card" id="federationCard">
     <div class="card-title"><span class="icon">🌐</span> 联邦网络 v3.0 <span id="fedEnabledStatus" style="font-size:12px;font-weight:normal;margin-left:8px"></span></div>
+
+    <!-- 📡 API 访问地址（个人代理模式） -->
+    <div style="background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.12);border-radius:8px;padding:14px 18px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📡 API 访问地址</div>
+      <div class="section-note" style="margin-bottom:12px">个人代理模式下，外部应用通过以下地址访问您配置的 Provider。共享网络的 P2P 地址请在「共享网络」面板查看。</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">🏠 局域网访问地址</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="personalLanUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')">
+            <button class="btn btn-secondary btn-sm" onclick="copyPersonalLanUrl()">📋</button>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">仅本机/同局域网内可访问</div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">🌐 公网访问地址</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="personalPublicUrl" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')" placeholder="未绑定域名">
+            <button class="btn btn-secondary btn-sm" onclick="copyPersonalPublicUrl()">📋</button>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px" id="personalPublicUrlHint">当前使用 Cloudflare 随机隧道地址，每次重启变化</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(99,179,237,.06);border-radius:6px;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;justify-content:space-between">
+        <span>💡 绑定自定义域名后获得固定公网地址，不再随重启变化</span>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('domainBindingSection').scrollIntoView({behavior:'smooth'})">🔗 绑定域名</button>
+      </div>
+    </div>
 
     <!-- 联邦说明文档 -->
     <div id="fedDocBanner" style="display:none;background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(99,179,237,.08));border:1px solid var(--accent-start);border-radius:8px;padding:14px 18px;margin-bottom:16px">
@@ -866,54 +886,167 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
       </div>
 
-      <!-- 密钥管理 (Phase 2) -->
+      <!-- 🌐 P2P 网络统一地址 -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔑 签名密钥管理</div>
-        <!-- 签发密钥表单 -->
-        <div style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px">
-          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">签发新密钥</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-            <input class="form-input" id="mkConsumerId" placeholder="Consumer ID" style="font-size:12px">
-            <input class="form-input" id="mkQuota" type="number" placeholder="额度 (默认15000)" style="font-size:12px">
+        <div style="background:linear-gradient(135deg,rgba(108,99,255,.08),rgba(16,185,129,.08));border:1px solid rgba(108,99,255,.2);border-radius:10px;padding:16px 20px">
+          <div style="font-size:15px;font-weight:700;margin-bottom:10px">🌐 P2P 网络统一地址</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <input class="form-input" id="netP2PUrl" readonly style="flex:1;font-family:monospace;font-size:14px;background:rgba(255,255,255,.7);cursor:pointer;border:1px solid rgba(108,99,255,.3);font-weight:600" onclick="this.select();document.execCommand('copy');toast('已复制到剪贴板')" placeholder="mmx://{node_id}">
+            <button class="btn btn-secondary btn-sm" onclick="copyP2PUrl()">📋 复制</button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-            <input class="form-input" id="mkModels" placeholder="允许模型 (逗号分隔)" style="font-size:12px">
-            <input class="form-input" id="mkExpDays" type="number" placeholder="有效天数 (默认30)" style="font-size:12px">
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="issueSignedKey()">🔐 签发密钥</button>
+          <div style="font-size:12px;color:var(--text-secondary)">所有客户端使用相同的地址接入网络。这是去中心化网络地址，不依赖域名，全网可达。</div>
         </div>
-        <!-- 已签发密钥列表 -->
-        <div id="netKeysList" style="font-size:12px;color:var(--text-muted)">暂无已签发密钥</div>
       </div>
 
-      <!-- 公共试用池 (Phase 2 Economic Model) -->
+      <!-- 🔑 网络密钥管理（核心区域） -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🎁 公共试用池</div>
-        <div class="section-note" style="margin-bottom:12px">新节点加入时自动创建试用密钥，提供试用额度。试用消耗算 2x 贡献积分（初期激励）。</div>
-        <div class="status-grid" style="margin-bottom:12px">
-          <div class="status-item">
-            <div>
-              <div class="status-label">试用密钥</div>
-              <div class="status-value" id="netTrialKeyCount">0</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔑 网络密钥管理</div>
+        <div class="section-note" style="margin-bottom:14px">加入共享网络后，使用网络签发的密钥（<code>mk_xxx</code> 格式）访问全网 AI 能力。与您自己的 Provider Key（<code>sk-xxx</code>）是完全独立的体系。</div>
+
+        <!-- 密钥类型对比表 -->
+        <div style="overflow-x:auto;margin-bottom:16px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+            <thead>
+              <tr style="background:var(--bg-secondary)">
+                <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--border-color);font-weight:600">类型</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--border-color)">获取方式</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--border-color)">额度</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--border-color)">访问范围</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--border-color)">适用场景</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">🌐 全网公共 Key</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">网络自动分配</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);color:var(--accent);font-weight:600">动态计算</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">全网所有节点</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">正式使用，贡献越多额度越大</td>
+              </tr>
+              <tr style="background:rgba(108,99,255,.02)">
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">🔐 私有 Key</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">管理员签发</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">管理员自定义</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">按权限配置</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">正式使用，需稳定额度</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">🌍 公共 Key</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">零门槛</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">固定 1000 tokens</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">签发节点</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color)">免费试用</td>
+              </tr>
+              <tr style="background:rgba(108,99,255,.02)">
+                <td style="padding:8px 10px">🎁 试用 Key</td>
+                <td style="padding:8px 10px">自动签发</td>
+                <td style="padding:8px 10px">有限（1000）</td>
+                <td style="padding:8px 10px">签发节点</td>
+                <td style="padding:8px 10px">初次体验（2x 贡献激励）</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 全网公共 Key（只读展示，动态额度） -->
+        <div style="background:linear-gradient(135deg,rgba(16,185,129,.06),rgba(108,99,255,.06));border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:16px 20px;margin-bottom:16px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:10px">🌐 全网公共 Key <span style="font-size:11px;font-weight:normal;color:var(--text-muted);margin-left:8px">网络级 · 自动管理</span></div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">全网统一的公共密钥，所有网络参与者共用。额度根据您在网络中的贡献动态计算——贡献越多，可用额度越大。</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
+            <div style="background:rgba(255,255,255,.7);padding:10px 12px;border-radius:8px">
+              <div style="font-size:11px;color:var(--text-muted)">密钥格式</div>
+              <div style="font-family:monospace;font-size:12px;font-weight:600;color:var(--accent-start);margin-top:2px" id="netGlobalKeyFormat">mk_open_global_{node_id}_{random}</div>
+            </div>
+            <div style="background:rgba(255,255,255,.7);padding:10px 12px;border-radius:8px">
+              <div style="font-size:11px;color:var(--text-muted)">当前可用额度</div>
+              <div style="font-size:16px;font-weight:700;color:var(--accent);margin-top:2px" id="netGlobalKeyQuota">动态计算中...</div>
+            </div>
+            <div style="background:rgba(255,255,255,.7);padding:10px 12px;border-radius:8px">
+              <div style="font-size:11px;color:var(--text-muted)">我的贡献积分</div>
+              <div style="font-size:16px;font-weight:700;margin-top:2px" id="netGlobalKeyMyContrib">0</div>
+            </div>
+            <div style="background:rgba(255,255,255,.7);padding:10px 12px;border-radius:8px">
+              <div style="font-size:11px;color:var(--text-muted)">网络权重</div>
+              <div style="font-size:16px;font-weight:700;margin-top:2px" id="netGlobalKeyMyWeight">-</div>
             </div>
           </div>
-          <div class="status-item">
-            <div>
-              <div class="status-label">试用额度</div>
-              <div class="status-value" id="netTrialQuota">0</div>
-            </div>
-          </div>
-          <div class="status-item">
-            <div>
-              <div class="status-label">已消耗</div>
-              <div class="status-value" id="netTrialUsed">0</div>
-            </div>
+          <div style="font-size:11px;color:var(--text-muted);padding:8px 10px;background:rgba(0,0,0,.02);border-radius:6px">
+            💡 额度计算公式：<code>个人额度 = 全局额度 × (贡献权重 × 贡献占比 + 信誉权重 × 信誉占比)</code>。贡献积分通过为其他节点提供 AI 服务获得。
           </div>
         </div>
-        <div id="netTrialPoolList" style="font-size:12px;color:var(--text-muted)">暂无试用密钥</div>
-        <div style="margin-top:8px">
-          <button class="btn btn-secondary btn-sm" onclick="issueTrialKey()">🎁 签发试用密钥</button>
-          <button class="btn btn-secondary btn-sm" onclick="loadTrialPool()">🔄 刷新</button>
+
+        <!-- 我签发的密钥（管理员可管理） -->
+        <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px 20px;margin-bottom:16px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:10px">🔐 我签发的密钥 <span style="font-size:11px;font-weight:normal;color:var(--text-muted);margin-left:8px">管理员手动管理</span></div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">作为节点管理员，您可以签发私有密钥和公共密钥，为其他消费者设置额度、有效期和访问权限。</div>
+
+          <!-- 签发新密钥表单 -->
+          <div style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">签发新密钥</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px">Consumer ID</label>
+                <input class="form-input" id="mkConsumerId" placeholder="消费者标识" style="font-size:12px">
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px">额度 (tokens)</label>
+                <input class="form-input" id="mkQuota" type="number" placeholder="默认 15000" style="font-size:12px">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px">允许模型</label>
+                <input class="form-input" id="mkModels" placeholder="逗号分隔，留空=全部" style="font-size:12px">
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px">有效天数</label>
+                <input class="form-input" id="mkExpDays" type="number" placeholder="默认 30 天" style="font-size:12px">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:4px">
+              <div>
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px">访问控制</label>
+                <select class="form-input" id="mkAccessControl" style="font-size:12px">
+                  <option value="private">🔒 私有 (仅指定消费者可用)</option>
+                  <option value="shared">🔗 共享 (多消费者共享额度)</option>
+                  <option value="public">🌍 公开 (任何人可用)</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:end;gap:6px">
+                <button class="btn btn-primary btn-sm" onclick="issueSignedKey()">🔐 签发</button>
+                <button class="btn btn-secondary btn-sm" onclick="issueTrialKey()">🎁 试用</button>
+                <button class="btn btn-secondary btn-sm" onclick="issueOpenKeyUnbound()">🌍 公开</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 已签发密钥列表 -->
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">已签发密钥</div>
+          <div id="netKeysList" style="font-size:12px;color:var(--text-muted)">暂无已签发密钥</div>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="loadSignedKeys()">🔄 刷新</button>
+          </div>
+        </div>
+
+        <!-- 公共试用池统计 -->
+        <div style="border:1px solid var(--border-color);border-radius:10px;padding:16px 20px;margin-bottom:16px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:10px">🎁 公共试用池</div>
+          <div class="section-note" style="margin-bottom:10px">新节点加入时自动创建试用密钥。试用消耗算 2x 贡献积分（初期激励）。</div>
+          <div class="status-grid" style="margin-bottom:8px">
+            <div class="status-item">
+              <div><div class="status-label">试用密钥数</div><div class="status-value" id="netTrialKeyCount">0</div></div>
+            </div>
+            <div class="status-item">
+              <div><div class="status-label">总试用额度</div><div class="status-value" id="netTrialQuota">0</div></div>
+            </div>
+            <div class="status-item">
+              <div><div class="status-label">已消耗</div><div class="status-value" id="netTrialUsed">0</div></div>
+            </div>
+          </div>
+          <div id="netTrialPoolList" style="font-size:12px;color:var(--text-muted)">暂无试用密钥</div>
+          <div style="margin-top:8px">
+            <button class="btn btn-secondary btn-sm" onclick="loadTrialPool()">🔄 刷新</button>
+          </div>
         </div>
       </div>
 
@@ -923,22 +1056,13 @@ select.form-input{appearance:none;cursor:pointer}
         <div class="section-note" style="margin-bottom:12px">新节点需先为别人提供服务（积累贡献积分），才能解锁访问全网资源的权限。阈值 = 全网平均贡献 × 0.3 × 网络规模因子。</div>
         <div class="status-grid" style="margin-bottom:12px">
           <div class="status-item">
-            <div>
-              <div class="status-label">本节点状态</div>
-              <div class="status-value" id="netSelfUnlockStatus">-</div>
-            </div>
+            <div><div class="status-label">本节点状态</div><div class="status-value" id="netSelfUnlockStatus">-</div></div>
           </div>
           <div class="status-item">
-            <div>
-              <div class="status-label">解锁阈值</div>
-              <div class="status-value" id="netUnlockThreshold">-</div>
-            </div>
+            <div><div class="status-label">解锁阈值</div><div class="status-value" id="netUnlockThreshold">-</div></div>
           </div>
           <div class="status-item">
-            <div>
-              <div class="status-label">网络规模因子</div>
-              <div class="status-value" id="netScaleFactor">-</div>
-            </div>
+            <div><div class="status-label">网络规模因子</div><div class="status-value" id="netScaleFactor">-</div></div>
           </div>
         </div>
         <div id="netUnlockList" style="font-size:12px;color:var(--text-muted)">暂无解锁数据</div>
@@ -949,13 +1073,12 @@ select.form-input{appearance:none;cursor:pointer}
 
       <!-- 开放密钥 (Phase 2 Open Keys) -->
       <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌐 开放密钥</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">🌍 开放密钥管理</div>
         <div class="section-note" style="margin-bottom:12px">
           <strong>未绑定</strong>：固定 1000 tokens，用完失效（零门槛体验）。<br>
           <strong>已绑定</strong>：额度按信誉和贡献动态计算，可访问全网（需节点已解锁）。
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="issueOpenKeyUnbound()">🔓 签发未绑定密钥</button>
           <button class="btn btn-secondary btn-sm" onclick="issueOpenKeyBound()">🔗 签发已绑定密钥</button>
           <button class="btn btn-secondary btn-sm" onclick="loadOpenKeys()">🔄 刷新</button>
         </div>
@@ -1738,13 +1861,41 @@ function copyApiUrl() {
   }
 }
 
-function copyNetworkUrl() {
-  const urlEl = document.getElementById('networkApiUrl');
-  if (urlEl) {
-    urlEl.select();
-    document.execCommand('copy');
-    toast('已复制到剪贴板');
-  }
+function copyPersonalLanUrl() {
+  const el = document.getElementById('personalLanUrl');
+  if (el) { el.select(); document.execCommand('copy'); toast('已复制局域网地址'); }
+}
+function copyPersonalPublicUrl() {
+  const el = document.getElementById('personalPublicUrl');
+  if (el) { el.select(); document.execCommand('copy'); toast('已复制公网地址'); }
+}
+function copyP2PUrl() {
+  const el = document.getElementById('netP2PUrl');
+  if (el) { el.select(); document.execCommand('copy'); toast('已复制 P2P 网络地址'); }
+}
+
+// Set personal API access URLs
+function setPersonalApiUrls() {
+  const lanEl = document.getElementById('personalLanUrl');
+  if (lanEl) lanEl.value = window.location.origin + '/v1';
+  const pubEl = document.getElementById('personalPublicUrl');
+  const hintEl = document.getElementById('personalPublicUrlHint');
+  // Check tunnel URL from federation status or tunnel endpoint
+  authFetch('/api/federation/status').then(r => r.json()).then(d => {
+    if (d.tunnel_url) {
+      if (pubEl) pubEl.value = d.tunnel_url + '/v1';
+      if (hintEl) {
+        if (d.custom_domain) {
+          hintEl.textContent = '已绑定自定义域名，地址固定不变';
+        } else {
+          hintEl.textContent = '当前使用 Cloudflare 随机隧道地址，每次重启变化';
+        }
+      }
+    } else {
+      if (pubEl) pubEl.value = '';
+      if (hintEl) hintEl.textContent = '未启用公网访问，仅局域网可访问';
+    }
+  }).catch(() => {});
 }
 
 // ===== Proxy API Key =====
@@ -2622,7 +2773,7 @@ async function createCollabInviteCode() {
 
 // ===== Start (only if authenticated) =====
 if (authToken) {
-  init().then(() => { initProxyApiUrl(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); loadShareInfo(); });
+  init().then(() => { initProxyApiUrl(); setPersonalApiUrls(); loadProxyApiKey(); loadSmtp(); loadAdminInfo(); refreshUsage(); refreshSiderStatus(); refreshLogs(); refreshHealth(); loadFederationStatus(); loadFederationConfig(); checkFederationDoc(); loadShareInfo(); });
 
   // Auto-refresh status and usage every 30 seconds with error handling
   let _pollTimer = setInterval(async () => {
@@ -2776,12 +2927,27 @@ if (authToken) {
         inactive.style.display = 'none';
         active.style.display = '';
 
-        // Show network URL group and set value
-        const networkUrlGroup = document.getElementById('networkUrlGroup');
-        const networkUrlInput = document.getElementById('networkApiUrl');
-        if (networkUrlGroup) networkUrlGroup.style.display = '';
-        if (networkUrlInput && s.relay_consumer_url) {
-          networkUrlInput.value = s.relay_consumer_url;
+        // Set P2P unified address
+        const p2pUrlEl = document.getElementById('netP2PUrl');
+        if (p2pUrlEl && s.node_id) {
+          p2pUrlEl.value = 'mmx://' + s.node_id;
+        }
+
+        // Set global key dynamic quota info
+        setText('netGlobalKeyMyContrib', s.contrib_points || 0);
+        if (s.network_weight !== undefined) {
+          setText('netGlobalKeyMyWeight', (s.network_weight || 0).toFixed(2));
+        }
+        // Dynamic quota display
+        const quotaEl = document.getElementById('netGlobalKeyQuota');
+        if (quotaEl) {
+          const cp = s.contrib_points || 0;
+          if (cp > 0) {
+            quotaEl.textContent = (cp * 10).toLocaleString() + ' tokens';
+          } else {
+            quotaEl.textContent = '需先积累贡献积分';
+            quotaEl.style.color = 'var(--text-muted)';
+          }
         }
 
         // Fill status fields
@@ -2813,6 +2979,9 @@ if (authToken) {
         loadTrialPool();
         loadUnlockStatus();
         loadOpenKeys();
+        // Phase 3-4 data
+        loadQuotaInfo();
+        loadGlobalPoolStatus();
       } else {
         modeLabel.textContent = '个人模式';
         modeLabel.className = 'badge badge-blue';
@@ -2822,9 +2991,8 @@ if (authToken) {
         inactive.style.display = '';
         active.style.display = 'none';
         
-        // Hide network URL group in personal mode
-        const networkUrlGroup = document.getElementById('networkUrlGroup');
-        if (networkUrlGroup) networkUrlGroup.style.display = 'none';
+        // Update personal API access URLs
+        setPersonalApiUrls();
       }
     }
 
