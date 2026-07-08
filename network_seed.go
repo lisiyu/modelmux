@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -202,24 +204,93 @@ func handleSeedHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// cachedSelfAddresses stores the auto-detected addresses
+var cachedSelfAddresses []string
+
 // getSelfAddresses returns the addresses other nodes can use to reach this node
+// Priority: configured public_url > auto-detected public IP > LAN IP
 func getSelfAddresses() []string {
+	if cachedSelfAddresses != nil {
+		return cachedSelfAddresses
+	}
+
 	addrs := []string{}
 
-	// Public URL from config
+	// 1. Configured public_url (highest priority)
 	publicURL := cfg.Get("public_url", "")
 	if publicURL != "" {
 		addrs = append(addrs, publicURL)
+		cachedSelfAddresses = addrs
+		return addrs
 	}
 
-	// LAN IP
+	// 2. Auto-detect public IP
+	publicIP := detectPublicIP()
+	if publicIP != "" {
+		port := cfg.Get("service_port", "8000")
+		addrs = append(addrs, "http://"+publicIP+":"+port)
+	}
+
+	// 3. LAN IP as fallback
 	lanIP := cfg.Get("lan_ip", "")
 	if lanIP != "" {
 		port := cfg.Get("service_port", "8000")
-		addrs = append(addrs, "http://"+lanIP+":"+port)
+		lanAddr := "http://" + lanIP + ":" + port
+		// Avoid duplicate if lanIP == publicIP
+		found := false
+		for _, a := range addrs {
+			if a == lanAddr {
+				found = true
+				break
+			}
+		}
+		if !found {
+			addrs = append(addrs, lanAddr)
+		}
 	}
 
+	cachedSelfAddresses = addrs
 	return addrs
+}
+
+// detectPublicIP tries to detect the node's public IP address
+func detectPublicIP() string {
+	services := []string{
+		"https://api.ipify.org?format=text",
+		"https://icanhazip.com",
+		"https://ipinfo.io/ip",
+		"https://checkip.amazonaws.com",
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, svc := range services {
+		resp, err := client.Get(svc)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			continue
+		}
+		buf := make([]byte, 64)
+		n, _ := resp.Body.Read(buf)
+		ip := strings.TrimSpace(string(buf[:n]))
+
+		// Validate: must look like an IPv4 address
+		if net.ParseIP(ip) == nil {
+			continue // not a valid IP, skip
+		}
+		// Skip private/loopback addresses
+		parsed := net.ParseIP(ip)
+		if parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast() {
+			continue
+		}
+
+		slog.Info("auto-detected public IP", "ip", ip, "source", svc)
+		return ip
+	}
+	slog.Warn("could not auto-detect public IP")
+	return ""
 }
 
 // startSeedServer starts the Seed discovery HTTP server on port 8001
@@ -249,6 +320,24 @@ func startSeedServer() {
 	go func() {
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
 			slog.Error("seed server error", "error", err)
+		}
+	}()
+
+	// Auto-detect public IP and register self in route table (after server is up)
+	go func() {
+		time.Sleep(3 * time.Second) // wait for server to fully start
+		selfAddrs := getSelfAddresses()
+		if len(selfAddrs) > 0 && netMgr != nil && netMgr.GetNodeID() != "" {
+			nodeID := netMgr.GetNodeID()
+			nodeName := cfg.Get("node_name", "OpenModelPool")
+			routeTable.Put(nodeID, nodeName, selfAddrs)
+			// Update the entry with gateway info
+			entry := routeTable.Get(nodeID)
+			if entry != nil {
+				entry.LastSeen = time.Now()
+				entry.Status = "online"
+			}
+			slog.Info("self-registered in route table", "node_id", nodeID, "addresses", selfAddrs)
 		}
 	}()
 }

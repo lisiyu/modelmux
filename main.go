@@ -175,6 +175,11 @@ func main() {
 	mux.HandleFunc("POST /v1/completions", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
 	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
 
+	// Seed discovery endpoints (public, no auth required)
+	mux.HandleFunc("GET /api/peers", handleSeedPeers)
+	mux.HandleFunc("POST /api/register", handleSeedRegister)
+	mux.HandleFunc("GET /api/seed/health", handleSeedHealth)
+
 	// Auth (public)
 	mux.HandleFunc("GET /api/setup/status", handleSetupStatus)
 	mux.HandleFunc("POST /api/setup", rateLimitByIP(3, "setup")(handleSetup)) // SA-10
