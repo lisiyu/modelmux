@@ -2,45 +2,64 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha512"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/tyler-smith/go-bip39"
 )
 
 // NodeIdentity manages this node's identity in the federation.
 // SA-13: The private key is stored encrypted in memory and only decrypted
 // on-demand for signing operations. After use, the decrypted key is zeroed
 // to minimize the window of exposure in process memory.
+// v4.0: Now supports BIP39 mnemonic-based identity generation with BIP32/SLIP-0010 derivation.
 type NodeIdentity struct {
-	mu           sync.RWMutex
-	nodeID       string
-	privKey      ed25519.PrivateKey // kept only during active use; cleared after sign
-	encPrivKey   string             // encrypted private key (AES-256-GCM), always in memory
-	pubKey       ed25519.PublicKey
-	githubUser   string
-	githubID     int64
-	joinedAt     time.Time
-	keyPath      string // path to encrypted key file
-	tokenBudget  int64  // monthly token budget declaration
+	mu              sync.RWMutex
+	nodeID          string
+	privKey         ed25519.PrivateKey // kept only during active use; cleared after sign
+	encPrivKey      string             // encrypted private key (AES-256-GCM), always in memory
+	pubKey          ed25519.PublicKey
+	mnemonic        string // BIP39 mnemonic (only set in Network Mode, kept in memory temporarily)
+	hasMnemonic     bool   // whether identity was derived from mnemonic
+	githubUser      string
+	githubID        int64
+	joinedAt        time.Time
+	keyPath         string // path to encrypted key file
+	tokenBudget     int64  // monthly token budget declaration
+	backupConfirmed bool   // whether user has confirmed mnemonic backup
+	needsMigration  bool   // true if loaded from legacy mm- format, needs migration to mmx- format
 }
 
 var node *NodeIdentity
 
 // NodeKeyStore is the on-disk format for the node's keys.
 type NodeKeyStore struct {
-	NodeID     string `json:"node_id"`
-	PrivKeyB64 string `json:"priv_key"`  // encrypted with enc
-	PubKeyB64  string `json:"pub_key"`
-	GitHubUser string `json:"github_user,omitempty"`
-	GitHubID   int64  `json:"github_id,omitempty"`
-	JoinedAt   string `json:"joined_at"`
+	NodeID          string `json:"node_id"`
+	PrivKeyB64      string `json:"priv_key"`                 // encrypted with AES-256-GCM
+	PubKeyB64       string `json:"pub_key"`
+	Mnemonic        string `json:"mnemonic,omitempty"`       // encrypted mnemonic (AES-256-GCM)
+	HasMnemonic     bool   `json:"has_mnemonic"`
+	BackupConfirmed bool   `json:"backup_confirmed"`
+	GitHubUser      string `json:"github_user,omitempty"`
+	GitHubID        int64  `json:"github_id,omitempty"`
+	JoinedAt        string `json:"joined_at"`
+	Version         int    `json:"version"` // storage version for migration
 }
 
+// initNode initializes the node identity from disk.
+// v4.0: No longer auto-generates identity on startup.
+// If no key file exists, the node stays in uninitialized (Personal Mode) state.
 func initNode(dataDir string) {
 	node = &NodeIdentity{
 		keyPath: dataDir + "/node.key",
@@ -48,14 +67,9 @@ func initNode(dataDir string) {
 
 	data, err := os.ReadFile(node.keyPath)
 	if err != nil {
-		// Generate new identity
-		slog.Info("generating new node identity")
-		if err := node.generate(); err != nil {
-			slog.Error("failed to generate node identity", "error", err)
-			return
-		}
-		node.save()
-		slog.Info("new node created", "node_id", node.nodeID)
+		// No existing key file - stay in uninitialized state (Personal Mode).
+		// Identity will be generated only when user explicitly joins the shared network.
+		slog.Info("no node identity found, running in personal mode")
 		return
 	}
 
@@ -69,6 +83,8 @@ func initNode(dataDir string) {
 	node.mu.Lock()
 	defer node.mu.Unlock()
 	node.nodeID = store.NodeID
+	node.hasMnemonic = store.HasMnemonic
+	node.backupConfirmed = store.BackupConfirmed
 
 	// SA-13: Store encrypted private key in memory (not decrypted)
 	node.encPrivKey = store.PrivKeyB64
@@ -90,15 +106,330 @@ func initNode(dataDir string) {
 	for i := range keyBytes {
 		keyBytes[i] = 0
 	}
+	// Decrypt and store mnemonic if present
+	if store.HasMnemonic && store.Mnemonic != "" {
+		decMnemonic := enc.Decrypt(store.Mnemonic)
+		if decMnemonic != "" {
+			node.mnemonic = decMnemonic
+		}
+	}
+
 	node.githubUser = store.GitHubUser
 	node.githubID = store.GitHubID
 	if store.JoinedAt != "" {
 		node.joinedAt, _ = time.Parse(time.RFC3339, store.JoinedAt)
 	}
 
-	slog.Info("node identity loaded", "node_id", node.nodeID)
+	// Check if this is a legacy mm- format that needs migration
+	if strings.HasPrefix(node.nodeID, "mm-") && !strings.HasPrefix(node.nodeID, "mmx-") {
+		node.needsMigration = true
+		slog.Warn("legacy node ID format detected, migration recommended", "node_id", node.nodeID)
+	}
+
+	slog.Info("node identity loaded", "node_id", node.nodeID, "has_mnemonic", node.hasMnemonic, "needs_migration", node.needsMigration)
 }
 
+// GenerateWithMnemonic generates a new identity using BIP39 mnemonic.
+// wordCount must be 12 or 24 (default 12).
+// Returns the mnemonic plaintext that MUST be shown to the user for backup.
+func (n *NodeIdentity) GenerateWithMnemonic(wordCount int) (string, error) {
+	if wordCount != 12 && wordCount != 24 {
+		return "", fmt.Errorf("word count must be 12 or 24, got %d", wordCount)
+	}
+
+	// Determine entropy bits: 12 words = 128 bits, 24 words = 256 bits
+	entropyBits := 128
+	if wordCount == 24 {
+		entropyBits = 256
+	}
+
+	// Generate entropy
+	entropy, err := bip39.NewEntropy(entropyBits)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate entropy: %w", err)
+	}
+
+	// Generate mnemonic from entropy
+	mnemonic, err := bip39.NewMnemonic(entropy)
+	if err != nil {
+		// Zero entropy before returning
+		for i := range entropy {
+			entropy[i] = 0
+		}
+		return "", fmt.Errorf("failed to generate mnemonic: %w", err)
+	}
+
+	// Zero entropy immediately after use
+	for i := range entropy {
+		entropy[i] = 0
+	}
+
+	// Derive Ed25519 key from mnemonic via BIP32/SLIP-0010
+	privKey, pubKey, err := deriveKeyFromMnemonic(mnemonic)
+	if err != nil {
+		return "", fmt.Errorf("failed to derive key from mnemonic: %w", err)
+	}
+
+	// Update identity
+	n.mu.Lock()
+	n.privKey = privKey
+	n.pubKey = pubKey
+	n.hasMnemonic = true
+	n.backupConfirmed = false
+	n.mnemonic = mnemonic // keep in memory until user confirms backup
+	n.nodeID = "mmx-" + hex.EncodeToString(pubKey)
+	n.joinedAt = time.Now().UTC()
+	n.needsMigration = false
+
+	// SA-13: Encrypt private key for storage, then clear plaintext
+	privKeyB64 := base64.StdEncoding.EncodeToString(privKey)
+	n.encPrivKey = enc.Encrypt(privKeyB64)
+	// Clear the private key from memory (will be decrypted on-demand for signing)
+	for i := range privKey {
+		privKey[i] = 0
+	}
+	n.privKey = nil
+
+	// Encrypt and store mnemonic
+	n.mu.Unlock()
+
+	// Save to disk (including encrypted mnemonic)
+	n.save()
+
+	slog.Info("new mnemonic-based node identity generated", "node_id", n.nodeID, "word_count", wordCount)
+
+	// Return mnemonic plaintext - caller MUST show this to user for backup
+	return mnemonic, nil
+}
+
+// RestoreFromMnemonic restores identity from an existing mnemonic phrase.
+// Used when user reinstalls or switches devices.
+func (n *NodeIdentity) RestoreFromMnemonic(mnemonic string) error {
+	mnemonic = strings.TrimSpace(mnemonic)
+
+	// Validate mnemonic
+	if !bip39.IsMnemonicValid(mnemonic) {
+		return fmt.Errorf("invalid mnemonic phrase")
+	}
+
+	// Derive Ed25519 key from mnemonic via BIP32/SLIP-0010
+	privKey, pubKey, err := deriveKeyFromMnemonic(mnemonic)
+	if err != nil {
+		return fmt.Errorf("failed to derive key from mnemonic: %w", err)
+	}
+
+	// Update identity
+	n.mu.Lock()
+	n.privKey = privKey
+	n.pubKey = pubKey
+	n.hasMnemonic = true
+	n.backupConfirmed = true // restored from existing mnemonic, assume already backed up
+	n.mnemonic = mnemonic
+	n.nodeID = "mmx-" + hex.EncodeToString(pubKey)
+	n.joinedAt = time.Now().UTC()
+	n.needsMigration = false
+
+	// SA-13: Encrypt private key for storage, then clear plaintext
+	privKeyB64 := base64.StdEncoding.EncodeToString(privKey)
+	n.encPrivKey = enc.Encrypt(privKeyB64)
+	for i := range privKey {
+		privKey[i] = 0
+	}
+	n.privKey = nil
+	n.mu.Unlock()
+
+	// Save to disk
+	n.save()
+
+	slog.Info("node identity restored from mnemonic", "node_id", n.nodeID)
+	return nil
+}
+
+// GetMnemonic returns the plaintext mnemonic.
+// Should only be called for display purposes (e.g., re-showing to user).
+func (n *NodeIdentity) GetMnemonic() (string, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	if !n.hasMnemonic {
+		return "", fmt.Errorf("this identity was not generated from a mnemonic")
+	}
+
+	if n.mnemonic == "" {
+		// Try to decrypt from disk
+		data, err := os.ReadFile(n.keyPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read key file: %w", err)
+		}
+
+		var store NodeKeyStore
+		if err := json.Unmarshal(data, &store); err != nil {
+			return "", fmt.Errorf("failed to parse key file: %w", err)
+		}
+
+		if store.Mnemonic == "" {
+			return "", fmt.Errorf("no mnemonic stored for this identity")
+		}
+
+		decrypted := enc.Decrypt(store.Mnemonic)
+		if decrypted == "" {
+			return "", fmt.Errorf("failed to decrypt mnemonic")
+		}
+		return decrypted, nil
+	}
+
+	return n.mnemonic, nil
+}
+
+// ConfirmBackup marks that the user has confirmed they backed up the mnemonic.
+func (n *NodeIdentity) ConfirmBackup() {
+	n.mu.Lock()
+	n.backupConfirmed = true
+	// After confirmation, zero the in-memory mnemonic for security
+	n.mnemonic = ""
+	n.mu.Unlock()
+	n.save()
+	slog.Info("mnemonic backup confirmed, mnemonic cleared from memory")
+}
+
+// IsInitialized returns whether the node identity has been set up.
+func (n *NodeIdentity) IsInitialized() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.nodeID != "" && (n.encPrivKey != "" || n.privKey != nil)
+}
+
+// NeedsMigration returns true if the node uses legacy mm- format.
+func (n *NodeIdentity) NeedsMigration() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.needsMigration
+}
+
+// HasMnemonic returns whether this identity is mnemonic-based.
+func (n *NodeIdentity) HasMnemonic() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.hasMnemonic
+}
+
+// IsBackupConfirmed returns whether the user has confirmed mnemonic backup.
+func (n *NodeIdentity) IsBackupConfirmed() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.backupConfirmed
+}
+
+// deriveKeyFromMnemonic derives an Ed25519 key pair from a BIP39 mnemonic
+// using SLIP-0010 derivation path m/44'/2024'/0'.
+func deriveKeyFromMnemonic(mnemonic string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+	// 1. Mnemonic → seed (BIP39)
+	seed := bip39.NewSeed(mnemonic, "")
+
+	// 2. SLIP-0010 Ed25519 master key derivation
+	// Master key: HMAC-SHA512(Key="ed25519 seed", Data=seed)
+	masterKey, masterChain := slip0010MasterKey(seed)
+
+	// Zero seed after use
+	for i := range seed {
+		seed[i] = 0
+	}
+
+	// 3. Derive path m/44'/2024'/0'
+	// All indices are hardened (bit 31 set)
+	key, chainCode := slip0010DerivePath(masterKey, masterChain, []uint32{
+		44 | 0x80000000,   // 44' (BIP44)
+		2024 | 0x80000000, // 2024' (OpenModelPool registered path)
+		0 | 0x80000000,    // 0' (default account)
+	})
+
+	// Zero parent key material
+	for i := range masterKey {
+		masterKey[i] = 0
+	}
+	for i := range chainCode {
+		chainCode[i] = 0
+	}
+
+	// 4. 32 bytes → Ed25519 private key seed
+	privKey := ed25519.NewKeyFromSeed(key)
+	pubKey := privKey.Public().(ed25519.PublicKey)
+
+	// Zero the derived key seed (ed25519.NewKeyFromSeed copies the seed)
+	for i := range key {
+		key[i] = 0
+	}
+
+	return privKey, pubKey, nil
+}
+
+// slip0010MasterKey generates the master key and chain code from seed per SLIP-0010.
+func slip0010MasterKey(seed []byte) ([]byte, []byte) {
+	mac := hmac.New(sha512.New, []byte("ed25519 seed"))
+	mac.Write(seed)
+	I := mac.Sum(nil)
+
+	// Left 32 bytes = master secret key, right 32 bytes = master chain code
+	key := make([]byte, 32)
+	chainCode := make([]byte, 32)
+	copy(key, I[:32])
+	copy(chainCode, I[32:])
+
+	// Zero the full HMAC output
+	for i := range I {
+		I[i] = 0
+	}
+
+	return key, chainCode
+}
+
+// slip0010DerivePath derives a child key through a series of hardened indices.
+func slip0010DerivePath(key, chainCode []byte, path []uint32) ([]byte, []byte) {
+	currentKey := make([]byte, 32)
+	copy(currentKey, key)
+	currentChain := make([]byte, 32)
+	copy(currentChain, chainCode)
+
+	for _, index := range path {
+		currentKey, currentChain = slip0010DeriveChild(currentKey, currentChain, index)
+	}
+
+	return currentKey, currentChain
+}
+
+// slip0010DeriveChild derives a single hardened child key per SLIP-0010.
+func slip0010DeriveChild(key, chainCode []byte, index uint32) ([]byte, []byte) {
+	// For Ed25519 (SLIP-0010), only hardened derivation is supported.
+	// Data = 0x00 || ser256(key) || ser32(index)
+	data := make([]byte, 1+32+4)
+	data[0] = 0x00
+	copy(data[1:], key)
+	binary.BigEndian.PutUint32(data[33:], index)
+
+	mac := hmac.New(sha512.New, chainCode)
+	mac.Write(data)
+	I := mac.Sum(nil)
+
+	// Zero data after use
+	for i := range data {
+		data[i] = 0
+	}
+
+	childKey := make([]byte, 32)
+	childChain := make([]byte, 32)
+	copy(childKey, I[:32])
+	copy(childChain, I[32:])
+
+	// Zero full HMAC output
+	for i := range I {
+		I[i] = 0
+	}
+
+	return childKey, childChain
+}
+
+// generate generates a new random Ed25519 identity (legacy method, kept for backward compat).
+// Deprecated: Use GenerateWithMnemonic for new identities.
 func (n *NodeIdentity) generate() error {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -111,38 +442,49 @@ func (n *NodeIdentity) generate() error {
 	n.privKey = priv // temporarily held for save(), cleared after save
 	n.pubKey = pub
 	n.nodeID = "mm-" + base58Encode(pub[:16])
+	n.hasMnemonic = false
 	n.joinedAt = time.Now().UTC()
 	return nil
 }
 
 func (n *NodeIdentity) save() {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
 	// SA-13: Use encrypted in-memory key if available, otherwise encrypt from plaintext
 	encKey := n.encPrivKey
 	if encKey == "" && n.privKey != nil {
 		privKeyB64 := base64.StdEncoding.EncodeToString(n.privKey)
 		encKey = enc.Encrypt(privKeyB64)
-		// Update stored encrypted key
-		n.mu.RUnlock()
-		n.mu.Lock()
 		n.encPrivKey = encKey
-		n.mu.Unlock()
-		n.mu.RLock()
+		// Clear plaintext private key after encryption
+		for i := range n.privKey {
+			n.privKey[i] = 0
+		}
+		n.privKey = nil
 	}
 
 	if encKey == "" {
 		return
 	}
 
+	// Encrypt mnemonic if available
+	encMnemonic := ""
+	if n.mnemonic != "" {
+		encMnemonic = enc.Encrypt(n.mnemonic)
+	}
+
 	store := NodeKeyStore{
-		NodeID:     n.nodeID,
-		PrivKeyB64: encKey,
-		PubKeyB64:  base64.StdEncoding.EncodeToString(n.pubKey),
-		GitHubUser: n.githubUser,
-		GitHubID:   n.githubID,
-		JoinedAt:   n.joinedAt.Format(time.RFC3339),
+		NodeID:          n.nodeID,
+		PrivKeyB64:      encKey,
+		PubKeyB64:       base64.StdEncoding.EncodeToString(n.pubKey),
+		Mnemonic:        encMnemonic,
+		HasMnemonic:     n.hasMnemonic,
+		BackupConfirmed: n.backupConfirmed,
+		GitHubUser:      n.githubUser,
+		GitHubID:        n.githubID,
+		JoinedAt:        n.joinedAt.Format(time.RFC3339),
+		Version:         2, // v4.0 storage version
 	}
 
 	data, _ := json.MarshalIndent(store, "", "  ")
@@ -315,13 +657,6 @@ func (n *NodeIdentity) SetTokenBudget(budget int64) {
 	n.mu.Lock()
 	n.tokenBudget = budget
 	n.mu.Unlock()
-}
-
-// IsInitialized returns whether the node identity has been set up.
-func (n *NodeIdentity) IsInitialized() bool {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	return n.nodeID != "" && (n.encPrivKey != "" || n.privKey != nil)
 }
 
 // base58 encoding (Bitcoin-style, no 0/O/I/l)

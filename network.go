@@ -58,6 +58,11 @@ type NetworkConfig struct {
 	LastAddressUpdate string          `json:"last_address_update"`
 	RelayEnabled      bool            `json:"relay_enabled"`
 
+	// v3.2: Independent network_enabled toggle — separate from Mode.
+	// Controls whether this node participates in the shared network at all.
+	// Three-level model: Personal (network_enabled=false) → Network (network_enabled=true, share_to_pool=false) → Shared Peer (both true)
+	NetworkEnabled    bool            `json:"network_enabled"`
+
 	// v3.1: Unified Peer Model — share_to_pool toggle
 	// Controls whether this node contributes its providers to the shared pool.
 	// Default: false — nodes join the network by default but do NOT share resources
@@ -315,6 +320,7 @@ func initNetworkManager(dataDir string) {
 		dataPath: filepath.Join(dataDir, "network.json"),
 		config: NetworkConfig{
 			Mode:             NetworkModePersonal,
+			NetworkEnabled:   false, // §4.2 Level 1: Personal Mode by default
 			ConsentAccepted:  false,
 			BootstrapNodes:   []string{},
 			SharedModels:     []string{},
@@ -358,6 +364,11 @@ func (nm *NetworkManager) load() {
 	// v2.0: Initialize quota allocation with defaults if not set
 	if nm.config.QuotaAllocation.FreeConsumerPercent == 0 && nm.config.QuotaAllocation.NetworkNodePercent == 0 {
 		nm.config.QuotaAllocation = DefaultQuotaAllocation()
+	}
+	// v3.2: Backward compat — old configs may not have network_enabled.
+	// If Mode is "shared", infer network_enabled = true.
+	if nm.config.Mode == NetworkModeShared && !nm.config.NetworkEnabled {
+		nm.config.NetworkEnabled = true
 	}
 }
 
@@ -491,6 +502,7 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 	}
 
 	nm.config.Mode = NetworkModeShared
+	nm.config.NetworkEnabled = true  // §4.2: Level 2 — Network Mode (join network, don't share by default)
 	nm.config.Stats.JoinedAt = time.Now().Format(time.RFC3339)
 	nm.startTime = time.Now()
 
@@ -523,6 +535,8 @@ func (nm *NetworkManager) DisableSharedNetwork() error {
 	}
 
 	nm.config.Mode = NetworkModePersonal
+	nm.config.NetworkEnabled = false  // §4.2: Level 1 — Personal Mode
+	nm.config.ShareToPool = false     // §4.2: disable sharing when leaving network
 	nm.config.Peers = []PeerInfo{}
 	nm.config.Stats.OnlinePeers = 0
 	nm.config.Addresses = []string{}
@@ -584,6 +598,9 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		"relay_enabled":      nm.config.RelayEnabled,
 		"relay_consumer_url": relayURL,
 		"route_table_size":   routeTable.Count(),
+
+		// v3.2: Three-level state model (§4.2)
+		"network_enabled":    nm.config.NetworkEnabled,
 
 		// v3.1: Unified Peer Model
 		"share_to_pool":      nm.config.ShareToPool,
@@ -780,9 +797,33 @@ func (nm *NetworkManager) UpdateConfig(nodeName string, sharedModels []string, m
 func (nm *NetworkManager) SetShareToPool(enabled bool) {
 	nm.mu.Lock()
 	defer nm.mu.Unlock()
+	// §4.2: Can only share if network is enabled (Level 3 requires Level 2)
+	if enabled && !nm.config.NetworkEnabled {
+		nm.config.NetworkEnabled = true
+		nm.config.Mode = NetworkModeShared
+		slog.Info("auto-enabled network for share_to_pool", "node_id", nm.config.NodeID)
+	}
 	nm.config.ShareToPool = enabled
 	nm.doSave()
-	slog.Info("share_to_pool updated", "enabled", enabled, "node_id", nm.config.NodeID)
+	slog.Info("share_to_pool updated", "enabled", enabled, "network_enabled", nm.config.NetworkEnabled, "node_id", nm.config.NodeID)
+}
+
+// SetNetworkEnabled toggles network participation independently.
+// §4.2: When disabling network, also disable share_to_pool (can't share without network).
+func (nm *NetworkManager) SetNetworkEnabled(enabled bool) {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	nm.config.NetworkEnabled = enabled
+	if !enabled {
+		// §4.2: Disabling network forces personal mode and disables sharing
+		nm.config.Mode = NetworkModePersonal
+		nm.config.ShareToPool = false
+	} else {
+		// §4.2: Enabling network without sharing = Level 2 (Network Mode)
+		nm.config.Mode = NetworkModeShared
+	}
+	nm.doSave()
+	slog.Info("network_enabled updated", "enabled", enabled, "mode", nm.config.Mode, "share_to_pool", nm.config.ShareToPool, "node_id", nm.config.NodeID)
 }
 
 // SetCapabilities updates the node's capability declarations.
@@ -860,6 +901,73 @@ func GetDisclaimer() DisclaimerResponse {
 	}
 }
 
+
+// ============================================================
+// §1.5.2 Join Conditions — check if node is ready for shared network
+// ============================================================
+
+// JoinConditionResult describes whether the node meets the conditions to join the shared network.
+type JoinConditionResult struct {
+	HasProvider     bool   `json:"has_provider"`      // condition 1: has at least one enabled Provider
+	HasQuotaManager bool   `json:"has_quota_manager"`  // condition 2: quota management is enabled
+	HasRemaining    bool   `json:"has_remaining"`      // condition 3: remaining quota > 0 this month
+	AllMet          bool   `json:"all_met"`            // all three conditions satisfied
+	Message         string `json:"message,omitempty"`  // gentle prompt message when all conditions met
+}
+
+// CheckJoinConditions checks whether the node satisfies the three conditions for joining the shared network.
+// §1.5.2: All three must be true to show a gentle prompt.
+func (nm *NetworkManager) CheckJoinConditions() (bool, JoinConditionResult) {
+	result := JoinConditionResult{}
+
+	// Condition 1: at least one enabled Provider with API keys
+	if pm != nil {
+		for _, p := range pm.Enabled() {
+			if len(p.APIKeys) > 0 {
+				result.HasProvider = true
+				break
+			}
+			// Also count legacy single API key
+			if p.APIKey != "" {
+				result.HasProvider = true
+				break
+			}
+		}
+	}
+
+	// Condition 2: quota management (allocation manager) is enabled
+	result.HasQuotaManager = allocMgr != nil
+
+	// Condition 3: remaining quota > 0 this month
+	if pm != nil {
+		var totalQuota int64
+		var usedQuota int64
+		for _, p := range pm.GetAllRaw() {
+			if !p.Enabled {
+				continue
+			}
+			if p.TokenLimit > 0 {
+				totalQuota += p.TokenLimit
+			}
+			for _, k := range p.APIKeys {
+				if k.Enabled && k.Quota > 0 {
+					totalQuota += k.Quota
+					usedQuota += k.Used
+				}
+			}
+		}
+		result.HasRemaining = totalQuota > usedQuota
+	}
+
+	result.AllMet = result.HasProvider && result.HasQuotaManager && result.HasRemaining
+
+	if result.AllMet {
+		result.Message = "您的节点已具备加入共享网络的条件。加入后，您可以消费网络中其他节点的资源，也可以选择将自己的闲置额度共享给他人。"
+	}
+
+	return result.AllMet, result
+}
+
 // ============================================================
 // API Handlers — Network Management
 // ============================================================
@@ -909,11 +1017,12 @@ func handleNetworkEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := map[string]any{
-		"status":        "enabled",
-		"mode":          "shared",
-		"node_id":       netMgr.config.NodeID,
-		"share_to_pool": netMgr.config.ShareToPool,
-		"capabilities":  netMgr.config.Capabilities,
+		"status":          "enabled",
+		"mode":            "shared",
+		"network_enabled": netMgr.config.NetworkEnabled,
+		"node_id":         netMgr.config.NodeID,
+		"share_to_pool":   netMgr.config.ShareToPool,
+		"capabilities":    netMgr.config.Capabilities,
 	}
 	writeJSON(w, 200, resp)
 }
@@ -923,24 +1032,57 @@ func handleNetworkDisable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"status": "disabled", "mode": "personal"})
+	writeJSON(w, 200, map[string]any{"status": "disabled", "mode": "personal", "network_enabled": false, "share_to_pool": false})
 }
 
-// POST /api/network/toggle — toggle shared network on/off
+// POST /api/network/toggle — toggle network/shared state
+// Supports three-level model via JSON body:
+//   {"enabled": true}                    → Level 2 (Network Mode, no sharing)
+//   {"enabled": true, "share_to_pool": true} → Level 3 (Shared Peer)
+//   {"enabled": false}                   → Level 1 (Personal Mode)
+//   {"network_enabled": true}            → Level 2
+//   {"network_enabled": true, "share_to_pool": true} → Level 3
+//   {"network_enabled": false}           → Level 1
 func handleNetworkToggle(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Enabled bool `json:"enabled"`
+		Enabled        *bool `json:"enabled"`
+		NetworkEnabled *bool `json:"network_enabled"`
+		ShareToPool    *bool `json:"share_to_pool"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, 400, "invalid request body")
 		return
 	}
 
-	if body.Enabled {
-		handleNetworkEnable(w, r)
-	} else {
-		handleNetworkDisable(w, r)
+	if netMgr == nil {
+		writeError(w, 500, "network manager not initialized")
+		return
 	}
+
+	// Determine network_enabled from either field (backward compat)
+	networkEnabled := false
+	if body.NetworkEnabled != nil {
+		networkEnabled = *body.NetworkEnabled
+	} else if body.Enabled != nil {
+		networkEnabled = *body.Enabled
+	}
+
+	netMgr.SetNetworkEnabled(networkEnabled)
+
+	if body.ShareToPool != nil && *body.ShareToPool && networkEnabled {
+		netMgr.SetShareToPool(true)
+	}
+
+	netMgr.mu.RLock()
+	resp := map[string]any{
+		"status":          "updated",
+		"mode":            string(netMgr.config.Mode),
+		"network_enabled": netMgr.config.NetworkEnabled,
+		"share_to_pool":   netMgr.config.ShareToPool,
+		"node_id":         netMgr.config.NodeID,
+	}
+	netMgr.mu.RUnlock()
+	writeJSON(w, 200, resp)
 }
 
 func handleNetworkConfigUpdate(w http.ResponseWriter, r *http.Request) {
@@ -1039,3 +1181,12 @@ func handleNetworkRoutes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"entries": entries, "count": len(entries)})
 }
 
+// GET /api/network/join-conditions — check if node meets join conditions (§1.5.2)
+func handleNetworkJoinConditions(w http.ResponseWriter, r *http.Request) {
+	if netMgr == nil {
+		writeJSON(w, 200, JoinConditionResult{AllMet: false, Message: "network manager not initialized"})
+		return
+	}
+	_, result := netMgr.CheckJoinConditions()
+	writeJSON(w, 200, result)
+}

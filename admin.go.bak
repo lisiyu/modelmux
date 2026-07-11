@@ -85,7 +85,16 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func handleVerifyAuth(w http.ResponseWriter, r *http.Request) {
 	token := extractToken(r)
-	username, _ := auth.VerifyToken(token)
+	if token == "" {
+		writeJSON(w, 401, map[string]any{"valid": false, "error": "no token provided"})
+		return
+	}
+	username, err := auth.VerifyToken(token)
+	if err != nil {
+		// P0-1: Properly reject invalid tokens instead of always returning true
+		writeJSON(w, 401, map[string]any{"valid": false, "error": "invalid or expired token"})
+		return
+	}
 	writeJSON(w, 200, map[string]any{"valid": true, "username": username})
 }
 
@@ -649,7 +658,25 @@ func handleGetProviderModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, fmt.Sprintf("provider '%s' not found", id))
 		return
 	}
+
+	// Try fetching from remote first
 	models := fetchRemoteModels(p)
+
+	// Fallback to cached/stored models if remote fetch returned nothing
+	if len(models) == 0 && len(p.Models) > 0 {
+		models = make([]map[string]string, 0, len(p.Models))
+		for _, md := range p.Models {
+			if md.Enabled {
+				models = append(models, map[string]string{"id": md.ID, "name": md.Name})
+			}
+		}
+		slog.Debug("using cached models", "provider", id, "count", len(models))
+	}
+
+	if models == nil {
+		models = []map[string]string{}
+	}
+
 	writeJSON(w, 200, map[string]any{"models": models, "count": len(models)})
 }
 
@@ -706,15 +733,15 @@ func handleUpdateProviderAccessControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize: if both false, default to guest-only
-	if !ac.AllowGuest && !ac.AllowPublic {
+	// Normalize: if both false, default to guest+shared
+	if !ac.AllowGuest && !ac.ShareToPool {
 		ac = DefaultAccessControl()
 	}
 
 	p.AccessControl = ac
 	pm.Add(p)
 
-	slog.Info("provider access control updated", "provider", id, "allow_guest", ac.AllowGuest, "allow_public", ac.AllowPublic)
+	slog.Info("provider access control updated", "provider", id, "allow_guest", ac.AllowGuest, "share_to_pool", ac.ShareToPool)
 	writeJSON(w, 200, map[string]any{"success": true, "access_control": ac})
 }
 
@@ -1114,7 +1141,11 @@ func sendMailTLS(addr string, a smtp.Auth, from string, to []string, msg []byte)
 	return c.Quit()
 }
 
-// POST /api/auth/reset-with-code — reset password using Proxy API Key + clear all keys
+// POST /api/auth/reset-with-code — reset password using an independent admin reset code.
+// P0-2: Proxy API Key is NO LONGER used as the reset credential.
+// Instead, a dedicated ResetCode is generated and stored in admin.json.
+// The reset code can be generated via the "generate-reset-code" CLI command or
+// from the admin panel when SMTP is unavailable.
 func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code        string `json:"code"`
@@ -1133,38 +1164,25 @@ func handleResetWithCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate against the stored Proxy API Key
-	storedKey := cfg.Get("proxy_api_key", "")
-	if storedKey == "" {
-		writeError(w, 403, "no Proxy API Key configured, cannot reset via this method")
-		return
-	}
-	if body.Code != storedKey {
-		writeError(w, 401, "invalid Proxy API Key")
+	// P0-2: Validate against the independent ResetCode, NOT the Proxy API Key
+	valid, err := auth.ValidateAndConsumeResetCode(body.Code)
+	if err != nil || !valid {
+		writeError(w, 401, "invalid or expired reset code")
 		return
 	}
 
 	// Reset password
 	hash, _ := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
+	auth.mu.Lock()
 	auth.data.Admin.PasswordHash = string(hash)
 	auth.data.Reset = nil
+	auth.mu.Unlock()
 	auth.save()
 
-	// Clear all provider API keys
-	cleared := pm.ClearAllAPIKeys()
-
-	// Clear the Proxy API Key itself (it was just used as the reset code)
-	cfg.mu.Lock()
-	delete(cfg.data, "proxy_api_key")
-	cfg.data["updated_at"] = time.Now().Format(time.RFC3339)
-	cfg.mu.Unlock()
-	cfg.save()
-
-	slog.Info("password reset via Proxy API Key", "cleared_keys", cleared)
+	slog.Info("password reset via independent reset code")
 	writeJSON(w, 200, map[string]any{
-		"success":      true,
-		"message":      "password reset successfully, all API keys cleared",
-		"keys_cleared": cleared,
+		"success": true,
+		"message": "password reset successfully",
 	})
 }
 
@@ -1203,10 +1221,13 @@ func handleExportConfig(w http.ResponseWriter, r *http.Request) {
 			"use_tls":    smtpCfg.UseTLS,
 			// Don't export SMTP password for security
 		},
-		"admin": map[string]any{
-			"username": auth.data.Admin.Username,
-			"email":    auth.data.Admin.Email,
-		},
+		"admin": func() map[string]any {
+			info := auth.AdminInfo()
+			return map[string]any{
+				"username": info["username"],
+				"email":    info["email"],
+			}
+		}(),
 	}
 	writeJSON(w, 200, export)
 }

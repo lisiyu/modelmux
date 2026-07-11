@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,7 +20,7 @@ import (
 //
 // The Global Pool aggregates computing resources (token quotas)
 // contributed by all participating nodes into a single virtual
-// pool. A Global Key (mk_open_global_*) can then route requests
+// pool. The Public Key (sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1) can then route requests
 // to any available node in the pool.
 //
 // Key design:
@@ -642,4 +644,538 @@ func handleGlobalPoolStats(w http.ResponseWriter, r *http.Request) {
 
 	stats := globalPool.GetStats()
 	writeJSON(w, 200, stats)
+}
+
+// ============================================================
+// §3.2.3 Public Global Key Four-Layer Quota
+// ============================================================
+//
+// Four-layer quota enforcement for the public global key:
+//   1. Global daily limit — total tokens shared pool can serve per day
+//   2. Per-IP daily limit — each IP gets a daily cap
+//   3. Hourly window limit — rate-limiting per hour
+//   4. Per-model daily limit — each model gets a fixed daily allocation
+//
+// On exhaustion:
+//   - Global exhausted → 503 Service Unavailable
+//   - IP/window/model exhausted → 429 Too Many Requests
+
+// PublicKeyQuota holds the four-layer quota configuration and runtime trackers.
+type PublicKeyQuota struct {
+	mu sync.RWMutex
+
+	// Configuration (loaded from config, with sensible defaults)
+	GlobalDailyLimit  int64            `json:"global_daily_limit"`
+	IPDailyLimit      int64            `json:"ip_daily_limit"`
+	HourlyWindowLimit int64            `json:"hourly_window_limit"`
+	ModelLimits       map[string]int64 `json:"model_limits"` // model → daily limit
+
+	// Runtime tracking
+	globalUsedToday int64
+	ipUsage         map[string]*IPUsageTracker
+	hourlyUsage     map[string]int64 // "2006-01-02-15" hour key → used
+	modelUsage      map[string]int64 // model → used today
+	lastDailyReset  time.Time
+	lastHourlyReset time.Time
+}
+
+// IPUsageTracker tracks per-IP token usage.
+type IPUsageTracker struct {
+	DailyUsed  int64 `json:"daily_used"`
+	HourlyUsed int64 `json:"hourly_used"`
+	LastReset  time.Time `json:"last_reset"`
+}
+
+// publicQuota is the global instance for public key quota tracking.
+var publicQuota *PublicKeyQuota
+
+// initPublicKeyQuota initializes the four-layer quota system.
+func initPublicKeyQuota() {
+	publicQuota = &PublicKeyQuota{
+		GlobalDailyLimit:  parseQuotaConfig("public_key_global_daily_limit", 100000),
+		IPDailyLimit:      parseQuotaConfig("public_key_ip_daily_limit", 10000),
+		HourlyWindowLimit: parseQuotaConfig("public_key_hourly_limit", 1000),
+		ModelLimits:       loadModelLimits(),
+		ipUsage:           make(map[string]*IPUsageTracker),
+		hourlyUsage:       make(map[string]int64),
+		modelUsage:        make(map[string]int64),
+		lastDailyReset:    time.Now(),
+		lastHourlyReset:   time.Now(),
+	}
+
+	// Start periodic cleanup
+	go publicQuota.resetLoop()
+
+	slog.Info("public key quota initialized",
+		"global_daily", publicQuota.GlobalDailyLimit,
+		"ip_daily", publicQuota.IPDailyLimit,
+		"hourly", publicQuota.HourlyWindowLimit,
+		"models", len(publicQuota.ModelLimits),
+	)
+}
+
+// loadModelLimits returns per-model daily limits from config or defaults.
+func loadModelLimits() map[string]int64 {
+	limits := map[string]int64{
+		"gpt-4o":        500,
+		"claude-3-5-sonnet": 500,
+		"deepseek-chat":     500,
+		"gemini-2.5-flash":  500,
+	}
+
+	// Override from config if available
+	if cfg != nil {
+		if v := cfg.Get("public_key_model_limits", ""); v != "" {
+			// Format: "gpt-4o=500,claude-3-5-sonnet=500"
+			for _, pair := range strings.Split(v, ",") {
+				parts := strings.SplitN(pair, "=", 2)
+				if len(parts) == 2 {
+					if limit, err := strconv.ParseInt(parts[1], 10, 64); err == nil && limit > 0 {
+						limits[parts[0]] = limit
+					}
+				}
+			}
+		}
+	}
+
+	return limits
+}
+
+// parseQuotaConfig reads a config key as int64, falling back to default.
+func parseQuotaConfig(key string, defaultVal int64) int64 {
+	if cfg == nil {
+		return defaultVal
+	}
+	v := cfg.Get(key, "")
+	if v == "" {
+		return defaultVal
+	}
+	parsed, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || parsed <= 0 {
+		return defaultVal
+	}
+	return parsed
+}
+
+// CheckPublicKeyQuota performs the four-layer quota check.
+// Returns: (allowed, rejectReason, remainingTokens)
+func (g *GlobalPoolManager) CheckPublicKeyQuota(ip string, model string, estimatedTokens int64) (bool, string, int64) {
+	// Delegate to publicQuota if initialized
+	if publicQuota == nil {
+		// If quota system not initialized, allow by default
+		return true, "", 0
+	}
+	return publicQuota.CheckQuota(ip, model, estimatedTokens)
+}
+
+// ReserveQuota atomically checks and reserves quota in a single operation.
+// This eliminates the TOCTOU race between CheckQuota and RecordUsage.
+// Returns: (reserved, rejectReason, reservedAmount)
+// If reserved is true, the caller MUST call AdjustQuota when done.
+func (g *GlobalPoolManager) ReserveQuota(ip string, model string, estimatedTokens int64) (bool, string, int64) {
+	if publicQuota == nil {
+		return true, "", 0
+	}
+	return publicQuota.ReserveQuota(ip, model, estimatedTokens)
+}
+
+// AdjustQuota adjusts the reserved quota after a request completes.
+// reserved is the amount that was reserved; actual is the real usage.
+// Difference is refunded (actual < reserved) or charged extra (actual > reserved).
+func (g *GlobalPoolManager) AdjustQuota(ip string, model string, reserved, actual int64) {
+	if publicQuota == nil {
+		return
+	}
+	publicQuota.AdjustQuota(ip, model, reserved, actual)
+}
+
+// CheckQuota performs the actual four-layer check.
+func (q *PublicKeyQuota) CheckQuota(ip string, model string, estimatedTokens int64) (bool, string, int64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	q.resetIfNeededLocked()
+
+	// Layer 1: Global daily limit
+	remaining := q.GlobalDailyLimit - q.globalUsedToday
+	if remaining <= 0 {
+		slog.Warn("public key quota: global daily limit exhausted",
+			"used", q.globalUsedToday,
+			"limit", q.GlobalDailyLimit,
+		)
+		return false, "global daily quota exhausted", 0
+	}
+	if q.globalUsedToday+estimatedTokens > q.GlobalDailyLimit {
+		return false, "global daily quota would be exceeded", remaining
+	}
+
+	// Layer 2: Per-IP daily limit
+	if ip != "" {
+		tracker, ok := q.ipUsage[ip]
+		if !ok {
+			tracker = &IPUsageTracker{LastReset: time.Now()}
+			q.ipUsage[ip] = tracker
+		}
+		if tracker.DailyUsed+estimatedTokens > q.IPDailyLimit {
+			ipRemaining := q.IPDailyLimit - tracker.DailyUsed
+			if ipRemaining < 0 {
+				ipRemaining = 0
+			}
+			slog.Warn("public key quota: IP daily limit exhausted",
+				"ip", ip,
+				"used", tracker.DailyUsed,
+				"limit", q.IPDailyLimit,
+			)
+			return false, "IP daily quota exceeded", ipRemaining
+		}
+	}
+
+	// Layer 3: Hourly window limit
+	hourKey := time.Now().Format("2006-01-02-15")
+	hourlyUsed := q.hourlyUsage[hourKey]
+	if hourlyUsed+estimatedTokens > q.HourlyWindowLimit {
+		hourlyRemaining := q.HourlyWindowLimit - hourlyUsed
+		if hourlyRemaining < 0 {
+			hourlyRemaining = 0
+		}
+		slog.Warn("public key quota: hourly limit exhausted",
+			"hour", hourKey,
+			"used", hourlyUsed,
+			"limit", q.HourlyWindowLimit,
+		)
+		return false, "hourly quota exceeded", hourlyRemaining
+	}
+
+	// Layer 4: Per-model daily limit
+	if model != "" {
+		if modelLimit, ok := q.ModelLimits[model]; ok {
+			modelUsed := q.modelUsage[model]
+			if modelUsed+estimatedTokens > modelLimit {
+				modelRemaining := modelLimit - modelUsed
+				if modelRemaining < 0 {
+					modelRemaining = 0
+				}
+				slog.Warn("public key quota: model daily limit exhausted",
+					"model", model,
+					"used", modelUsed,
+					"limit", modelLimit,
+				)
+				return false, "model daily quota exceeded", modelRemaining
+			}
+		}
+	}
+
+	// All layers passed — compute minimum remaining
+	minRemaining := remaining
+	if ip != "" {
+		if tracker, ok := q.ipUsage[ip]; ok {
+			ipRem := q.IPDailyLimit - tracker.DailyUsed
+			if ipRem < minRemaining {
+				minRemaining = ipRem
+			}
+		}
+	}
+	hourlyRem := q.HourlyWindowLimit - hourlyUsed
+	if hourlyRem < minRemaining {
+		minRemaining = hourlyRem
+	}
+	if model != "" {
+		if modelLimit, ok := q.ModelLimits[model]; ok {
+			modelRem := modelLimit - q.modelUsage[model]
+			if modelRem < minRemaining {
+				minRemaining = modelRem
+			}
+		}
+	}
+
+	return true, "", minRemaining
+}
+
+// ReserveQuota atomically checks all four quota layers and reserves the estimated amount.
+// This combines check+record into a single locked operation, preventing TOCTOU races.
+// Returns: (reserved, rejectReason, remainingTokens)
+func (q *PublicKeyQuota) ReserveQuota(ip string, model string, estimatedTokens int64) (bool, string, int64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	q.resetIfNeededLocked()
+
+	// Layer 1: Global daily limit
+	remaining := q.GlobalDailyLimit - q.globalUsedToday
+	if remaining <= 0 {
+		slog.Warn("public key quota: global daily limit exhausted",
+			"used", q.globalUsedToday,
+			"limit", q.GlobalDailyLimit,
+		)
+		return false, "global daily quota exhausted", 0
+	}
+	if q.globalUsedToday+estimatedTokens > q.GlobalDailyLimit {
+		return false, "global daily quota would be exceeded", remaining
+	}
+
+	// Layer 2: Per-IP daily limit
+	if ip != "" {
+		tracker, ok := q.ipUsage[ip]
+		if !ok {
+			tracker = &IPUsageTracker{LastReset: time.Now()}
+			q.ipUsage[ip] = tracker
+		}
+		if tracker.DailyUsed+estimatedTokens > q.IPDailyLimit {
+			ipRemaining := q.IPDailyLimit - tracker.DailyUsed
+			if ipRemaining < 0 {
+				ipRemaining = 0
+			}
+			return false, "IP daily quota exceeded", ipRemaining
+		}
+	}
+
+	// Layer 3: Hourly window limit
+	hourKey := time.Now().Format("2006-01-02-15")
+	hourlyUsed := q.hourlyUsage[hourKey]
+	if hourlyUsed+estimatedTokens > q.HourlyWindowLimit {
+		hourlyRemaining := q.HourlyWindowLimit - hourlyUsed
+		if hourlyRemaining < 0 {
+			hourlyRemaining = 0
+		}
+		return false, "hourly quota exceeded", hourlyRemaining
+	}
+
+	// Layer 4: Per-model daily limit
+	if model != "" {
+		if modelLimit, ok := q.ModelLimits[model]; ok {
+			modelUsed := q.modelUsage[model]
+			if modelUsed+estimatedTokens > modelLimit {
+				modelRemaining := modelLimit - modelUsed
+				if modelRemaining < 0 {
+					modelRemaining = 0
+				}
+				return false, "model daily quota exceeded", modelRemaining
+			}
+		}
+	}
+
+	// All layers passed — pre-deduct the estimated amount (reserve)
+	q.globalUsedToday += estimatedTokens
+
+	if ip != "" {
+		tracker := q.ipUsage[ip]
+		tracker.DailyUsed += estimatedTokens
+		tracker.HourlyUsed += estimatedTokens
+	}
+
+	q.hourlyUsage[hourKey] += estimatedTokens
+
+	if model != "" {
+		q.modelUsage[model] += estimatedTokens
+	}
+
+	// Compute minimum remaining after reservation
+	minRemaining := q.GlobalDailyLimit - q.globalUsedToday
+	if ip != "" {
+		if tracker, ok := q.ipUsage[ip]; ok {
+			ipRem := q.IPDailyLimit - tracker.DailyUsed
+			if ipRem < minRemaining {
+				minRemaining = ipRem
+			}
+		}
+	}
+	hourlyRem := q.HourlyWindowLimit - q.hourlyUsage[hourKey]
+	if hourlyRem < minRemaining {
+		minRemaining = hourlyRem
+	}
+	if model != "" {
+		if modelLimit, ok := q.ModelLimits[model]; ok {
+			modelRem := modelLimit - q.modelUsage[model]
+			if modelRem < minRemaining {
+				minRemaining = modelRem
+			}
+		}
+	}
+
+	return true, "", minRemaining
+}
+
+// AdjustQuota adjusts the pre-reserved quota after a request completes.
+// If actual < reserved, the difference is refunded.
+// If actual > reserved, the difference is charged.
+func (q *PublicKeyQuota) AdjustQuota(ip string, model string, reserved, actual int64) {
+	if q == nil {
+		return
+	}
+	diff := actual - reserved // positive = charge more, negative = refund
+	if diff == 0 {
+		return // perfect estimate, nothing to adjust
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	q.resetIfNeededLocked()
+
+	// Layer 1: Global
+	q.globalUsedToday += diff
+
+	// Layer 2: Per-IP
+	if ip != "" {
+		tracker, ok := q.ipUsage[ip]
+		if !ok {
+			tracker = &IPUsageTracker{LastReset: time.Now()}
+			q.ipUsage[ip] = tracker
+		}
+		tracker.DailyUsed += diff
+		tracker.HourlyUsed += diff
+	}
+
+	// Layer 3: Hourly
+	hourKey := time.Now().Format("2006-01-02-15")
+	q.hourlyUsage[hourKey] += diff
+
+	// Layer 4: Per-model
+	if model != "" {
+		q.modelUsage[model] += diff
+	}
+}
+
+// RecordUsage records actual token usage after a request completes.
+func (q *PublicKeyQuota) RecordUsage(ip string, model string, tokens int64) {
+	if q == nil || tokens <= 0 {
+		return
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	q.resetIfNeededLocked()
+
+	// Layer 1: Global
+	q.globalUsedToday += tokens
+
+	// Layer 2: Per-IP
+	if ip != "" {
+		tracker, ok := q.ipUsage[ip]
+		if !ok {
+			tracker = &IPUsageTracker{LastReset: time.Now()}
+			q.ipUsage[ip] = tracker
+		}
+		tracker.DailyUsed += tokens
+		tracker.HourlyUsed += tokens
+	}
+
+	// Layer 3: Hourly
+	hourKey := time.Now().Format("2006-01-02-15")
+	q.hourlyUsage[hourKey] += tokens
+
+	// Layer 4: Per-model
+	if model != "" {
+		q.modelUsage[model] += tokens
+	}
+}
+
+// GetQuotaStatus returns current quota utilization for monitoring.
+func (q *PublicKeyQuota) GetQuotaStatus() map[string]any {
+	if q == nil {
+		return map[string]any{"enabled": false}
+	}
+
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	ipUsageMap := make(map[string]any)
+	for ip, tracker := range q.ipUsage {
+		ipUsageMap[ip] = map[string]any{
+			"daily_used":  tracker.DailyUsed,
+			"hourly_used": tracker.HourlyUsed,
+		}
+	}
+
+	modelUsageMap := make(map[string]any)
+	for model, used := range q.modelUsage {
+		limit := q.ModelLimits[model]
+		modelUsageMap[model] = map[string]any{
+			"used":  used,
+			"limit": limit,
+		}
+	}
+
+	return map[string]any{
+		"enabled":            true,
+		"global_daily_limit": q.GlobalDailyLimit,
+		"global_used_today":  q.globalUsedToday,
+		"ip_daily_limit":     q.IPDailyLimit,
+		"hourly_limit":       q.HourlyWindowLimit,
+		"ip_usage":           ipUsageMap,
+		"model_usage":        modelUsageMap,
+		"last_daily_reset":   q.lastDailyReset.Format(time.RFC3339),
+	}
+}
+
+// resetIfNeededLocked resets counters when their windows expire.
+// Caller must hold q.mu.
+func (q *PublicKeyQuota) resetIfNeededLocked() {
+	now := time.Now()
+
+	// Daily reset (at midnight or if more than 24h since last reset)
+	if now.Sub(q.lastDailyReset) >= 24*time.Hour || now.Day() != q.lastDailyReset.Day() {
+		q.globalUsedToday = 0
+		q.ipUsage = make(map[string]*IPUsageTracker)
+		q.modelUsage = make(map[string]int64)
+		q.lastDailyReset = now
+		slog.Info("public key quota: daily counters reset")
+	}
+
+	// Hourly reset (clean entries from previous hours)
+	if now.Sub(q.lastHourlyReset) >= 1*time.Hour {
+		currentHour := now.Format("2006-01-02-15")
+		for key := range q.hourlyUsage {
+			if key != currentHour {
+				delete(q.hourlyUsage, key)
+			}
+		}
+		// Reset IP hourly counters
+		for _, tracker := range q.ipUsage {
+			tracker.HourlyUsed = 0
+		}
+		q.lastHourlyReset = now
+	}
+}
+
+// resetLoop periodically cleans up expired entries.
+func (q *PublicKeyQuota) resetLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		q.mu.Lock()
+		q.resetIfNeededLocked()
+		q.mu.Unlock()
+	}
+}
+
+// ============================================================
+// GlobalPoolManager — wrapper for public key quota checks
+// ============================================================
+
+// GlobalPoolManager provides the API surface for managing the global pool
+// with integrated public key quota enforcement.
+type GlobalPoolManager struct {
+	quota *PublicKeyQuota
+}
+
+// NewGlobalPoolManager creates a new GlobalPoolManager.
+func NewGlobalPoolManager() *GlobalPoolManager {
+	return &GlobalPoolManager{
+		quota: publicQuota,
+	}
+}
+
+// ============================================================
+// Public Key Quota API Handlers
+// ============================================================
+
+// GET /api/network/public-key-quota — public key quota utilization
+func handlePublicKeyQuotaStatus(w http.ResponseWriter, r *http.Request) {
+	if publicQuota == nil {
+		writeJSON(w, 200, map[string]any{"enabled": false})
+		return
+	}
+	writeJSON(w, 200, publicQuota.GetQuotaStatus())
 }

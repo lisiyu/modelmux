@@ -205,48 +205,8 @@ func TestIPFSJSONStoreAndRetrieve(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Test 9: IOTA submit and verify (local fallback)
-// ---------------------------------------------------------------------------
-
-func TestIOTASubmitAndVerify(t *testing.T) {
-	client := NewIOTAClient()
-	data := []byte("iota test data")
-
-	txHash, err := client.SubmitData(data, "TEST")
-	if err != nil {
-		t.Fatalf("SubmitData: %v", err)
-	}
-	if txHash == "" {
-		t.Fatal("expected non-empty tx hash")
-	}
-
-	retrieved, found, err := client.VerifyData(txHash)
-	if err != nil {
-		t.Fatalf("VerifyData: %v", err)
-	}
-	if !found {
-		t.Fatal("data should be found")
-	}
-	if string(retrieved) != string(data) {
-		t.Fatalf("data mismatch: got %q, want %q", retrieved, data)
-	}
-}
 
 // ---------------------------------------------------------------------------
-// Test 10: IOTA tx count
-// ---------------------------------------------------------------------------
-
-func TestIOTATxCount(t *testing.T) {
-	client := NewIOTAClient()
-
-	for i := 0; i < 3; i++ {
-		_, _ = client.SubmitData([]byte("data"), "TAG")
-	}
-
-	if client.TxCount() != 3 {
-		t.Fatalf("expected 3 txs, got %d", client.TxCount())
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Test 11: Trust manager - reputation score calculation
@@ -421,46 +381,6 @@ func TestFreeLedgerAsyncUpload(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Test 16: FreeLedger high-value IOTA anchoring
-// ---------------------------------------------------------------------------
-
-func TestFreeLedgerHighValueIOTA(t *testing.T) {
-	cfg := DefaultFreeLedgerConfig()
-	cfg.AsyncUpload = false // synchronous for deterministic test
-	cfg.MajorEventThreshold = 10.0
-
-	fl, err := NewFreeLedger("node-2", cfg)
-	if err != nil {
-		t.Fatalf("NewFreeLedger: %v", err)
-	}
-
-	rec := &ContributionRecord{
-		PeerID:        "contributor-2",
-		PeerPublicKey: fl.Gossip.PublicKey(),
-		ModelID:       "claude-3",
-		Provider:      "anthropic",
-		Tokens:        50000,
-		ValueUSD:      150.0, // above threshold
-	}
-
-	id, err := fl.RecordContribution(rec)
-	if err != nil {
-		t.Fatalf("RecordContribution: %v", err)
-	}
-
-	got, err := fl.GetContribution(id)
-	if err != nil {
-		t.Fatalf("GetContribution: %v", err)
-	}
-
-	// Should have IOTA anchoring since value > threshold.
-	if got.Proof.StorageLocation != "ipfs+iota" {
-		t.Fatalf("expected ipfs+iota storage, got %s", got.Proof.StorageLocation)
-	}
-	if got.Proof.IOTATxHash == "" {
-		t.Fatal("expected IOTA tx hash for high-value contribution")
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Test 17: Gossip sync merge

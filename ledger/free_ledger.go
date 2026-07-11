@@ -8,10 +8,10 @@ import (
 
 // FreeLedgerConfig holds configuration for the FreeLedger.
 type FreeLedgerConfig struct {
-	// MajorEventThreshold is the USD value above which an IOTA anchor is used.
+	// MajorEventThreshold is the USD value above which special anchoring is used.
 	MajorEventThreshold float64
 
-	// AsyncUpload enables asynchronous IPFS/IOTA upload.
+	// AsyncUpload enables asynchronous IPFS upload.
 	AsyncUpload bool
 }
 
@@ -23,12 +23,11 @@ func DefaultFreeLedgerConfig() FreeLedgerConfig {
 	}
 }
 
-// FreeLedger integrates GossipLedger + IPFSClient + IOTAClient to provide
+// FreeLedger integrates GossipLedger + IPFSClient to provide
 // a complete zero-cost contribution ledger system.
 type FreeLedger struct {
 	Gossip *GossipLedger
 	IPFS   *IPFSClient
-	IOTA   *IOTAClient
 
 	config FreeLedgerConfig
 	wg     sync.WaitGroup
@@ -44,13 +43,11 @@ func NewFreeLedger(peerID string, cfg FreeLedgerConfig) (*FreeLedger, error) {
 	return &FreeLedger{
 		Gossip: gossip,
 		IPFS:   NewIPFSClient(),
-		IOTA:   NewIOTAClient(),
 		config: cfg,
 	}, nil
 }
 
-// RecordContribution signs a contribution, stores it locally, uploads to IPFS,
-// and optionally anchors on IOTA for high-value events.
+// RecordContribution signs a contribution, stores it locally, and uploads to IPFS.
 // Returns the local record ID.
 func (f *FreeLedger) RecordContribution(record *ContributionRecord) (string, error) {
 	// 1. Sign and store in local gossip ledger.
@@ -79,7 +76,7 @@ func (f *FreeLedger) RecordContribution(record *ContributionRecord) (string, err
 	return id, nil
 }
 
-// uploadToIPFS handles the IPFS upload and optional IOTA anchoring.
+// uploadToIPFS handles the IPFS upload.
 func (f *FreeLedger) uploadToIPFS(record *ContributionRecord) {
 	data, err := json.Marshal(record)
 	if err != nil {
@@ -94,15 +91,6 @@ func (f *FreeLedger) uploadToIPFS(record *ContributionRecord) {
 	// Update the proof with IPFS hash.
 	record.Proof.IPFSHash = cid
 	record.Proof.StorageLocation = "ipfs"
-
-	// High-value events also get anchored on IOTA.
-	if record.ValueUSD >= f.config.MajorEventThreshold {
-		txHash, err := f.IOTA.SubmitData(data, "CONTRIB")
-		if err == nil {
-			record.Proof.IOTATxHash = txHash
-			record.Proof.StorageLocation = "ipfs+iota"
-		}
-	}
 }
 
 // WaitForUploads blocks until all async uploads are complete.

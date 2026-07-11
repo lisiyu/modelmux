@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -148,7 +149,7 @@ func TestConnectionReuse(t *testing.T) {
 		IdleConnTimeout:     90 * time.Second,
 	}
 	origDial := transport.DialContext
-	transport.DialContext = func(ctx interface{ Deadline() (time.Time, bool) }, network, addr string) (net.Conn, error) {
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		mu.Lock()
 		dialCount++
 		mu.Unlock()
@@ -169,7 +170,7 @@ func TestConnectionReuse(t *testing.T) {
 	newClientDials := 0
 	for i := 0; i < 20; i++ {
 		newTransport := &http.Transport{
-			DialContext: func(ctx interface{ Deadline() (time.Time, bool) }, network, addr string) (net.Conn, error) {
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				mu.Lock()
 				newClientDials++
 				mu.Unlock()

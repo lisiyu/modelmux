@@ -1,8 +1,8 @@
 # OpenModelPool Architecture Design Document
 
-> **Version**: 1.0  
-> **Last Updated**: 2026-07-09  
-> **Status**: Active Development
+> **Version**: v4.0.1  
+> **Last Updated**: 2026-07-11  
+> **Status**: Design Finalized (v4.0.1 major revision)
 
 ---
 
@@ -28,20 +28,28 @@
 
 ### 1.1 What is OpenModelPool?
 
-OpenModelPool is a **P2P shared computing power pool** for AI model services. It enables individual developers and organizations to share their AI model API access (OpenAI, Anthropic, DeepSeek, etc.) in a decentralized network — similar to how BitTorrent enables file sharing, but OpenModelPool shares **AI model services** instead of files.
+OpenModelPool is a **Temporary Token Bank + Geek Sharing Network** for AI model services. **By default, it is a personal AI model proxy** (Personal Mode). Only when users configure a Provider Token, enable quota management, and have idle quota, the system prompts them to **optionally join the shared network** (Network Mode). Provider Tokens are **never** uploaded to any server.
 
 ### 1.2 Core Philosophy
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    BitTorrent Analogy                        │
+│                Dual Narrative                                │
 ├─────────────────────────────────────────────────────────────┤
-│  BitTorrent:    Peers share FILES    → download/upload       │
-│  OpenModelPool: Peers share SERVICES → consume/contribute    │
 │                                                              │
-│  Every node is BOTH:                                         │
-│  • Consumer (Leecher) — makes API requests                   │
-│  • Provider (Seeder)  — shares API access to the pool        │
+│  Temporary Token Bank:                                       │
+│    Your GPT-4o quota only used 60%? Remaining 40% expires    │
+│    → Deposit into OpenModelPool network                      │
+│    → Others consume → you earn Contribution Credits          │
+│    → Later, redeem credits for models you need               │
+│                                                              │
+│  BitTorrent Analogy (Network Mode only):                     │
+│    BitTorrent:    Peers share FILES    → download/upload      │
+│    OpenModelPool: Peers share SERVICES → consume/contribute   │
+│                                                              │
+│  ⚠️ Key Distinction:                                         │
+│    Personal Mode (default): Pure local proxy, NO network     │
+│    Network Mode (opt-in): P2P sharing with Node ID           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,11 +57,13 @@ OpenModelPool is a **P2P shared computing power pool** for AI model services. It
 
 | Principle | Description |
 |-----------|-------------|
+| **Personal-First** | Default offline personal proxy; network is opt-in |
 | **Decentralization** | No central server; nodes discover and route via DHT |
-| **Zero Infrastructure Cost** | Runs on IPFS (free) + IOTA (zero gas) |
-| **Open Contribution** | Any node can contribute API keys to the shared pool |
+| **Open Contribution** | Any node can contribute API access to the shared pool |
+| **Contribution Credit** | Non-withdrawable, non-tradeable, bound to Node ID |
 | **Trust-Based Routing** | Reputation system ensures service quality |
 | **Fail-Close Security** | Authorization chain fails safely on any error |
+| **4 Key Types Only** | Proxy API Key / Guest Proxy Key / Public Global Key / Provider Key (`mk_*` deprecated) |
 
 ### 1.4 System Architecture Overview
 
@@ -250,42 +260,40 @@ func determineNodeMode(host host.Host, autonat autonat.AutoNAT) dht.ModeOpt {
 
 ---
 
-## 3. Key Management System
+## 3. Key Management System (v4.0)
 
-### 3.1 Three Key Types
+### 3.1 Four Key Types (v4.0 — `mk_*` series deprecated)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     Key Type Hierarchy                               │
+│                     Key Type Hierarchy (v4.0)                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  1. Proxy API Key (Personal)                                         │
-│     Format:  sk-{48 random chars}                                   │
-│     Binding: Bound to specific Provider                             │
+│  1. Proxy API Key (ompk_*)                                          │
+│     Format:  ompk_{48 random chars}                                 │
+│     Binding: Bound to user account                                  │
 │     Scope:   Personal use, routes to owner's providers              │
-│     ┌─────────────────────────────────────────┐                     │
-│     │ sk-a1b2c3d4e5f6g7h8i9j0...              │                     │
-│     │ → Routes to owner's OpenAI provider     │                     │
-│     └─────────────────────────────────────────┘                     │
+│     Storage: DB (AES-256-GCM encrypted)                             │
 │                                                                      │
-│  2. Guest Key (Shared)                                               │
-│     Format:  sk-guest-{node_id}-{random}                            │
-│     Binding: No provider binding (global shared pool)               │
+│  2. Guest Proxy Key (omgk_*)                                        │
+│     Format:  omgk_{random}                                          │
+│     Binding: Quota-limited, time-bounded                            │
 │     Scope:   Can only access the issuing node                       │
-│     ┌─────────────────────────────────────────┐                     │
-│     │ sk-guest-mmx-abc123-xyz789              │                     │
-│     │ → Routes to node mmx-abc123 only        │                     │
-│     └─────────────────────────────────────────┘                     │
+│     Storage: DB (AES-256-GCM encrypted)                             │
+│     Note:    NOT auto-invalidated when Proxy API Key is leaked      │
 │                                                                      │
-│  3. Public Key (Official)                                            │
-│     Format:  sk-openmodelpool-com-github-lisiyu-openmodelpool-      │
-│              public-key-v1                                            │
-│     Binding: None (official public key)                             │
-│     Scope:   Global shared pool, no node restriction                │
-│     ┌─────────────────────────────────────────┐                     │
-│     │ sk-openmodelpool-com-github-lisiyu-...  │                     │
-│     │ → Routes to ANY node in shared pool     │                     │
-│     └─────────────────────────────────────────┘                     │
+│  3. Public Global Key (global)                                      │
+│     Format:  Built-in global key                                    │
+│     Binding: None (public experience entry)                         │
+│     Scope:   Low-quota trial, quadruple rate limits                 │
+│     Note:    Not guaranteed always available                        │
+│                                                                      │
+│  4. Provider Key (provider)                                         │
+│     Storage: OS Keyring (macOS Keychain / Windows DPAPI / Linux)    │
+│     Note:    NEVER uploaded to any server                           │
+│                                                                      │
+│  ~~omsk_* series (mk_, mk-rk_, mk-chk_) — DEPRECATED in v4.0~~     │
+│  Replaced by: BIP39 Mnemonic → Ed25519 → Node ID                    │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -473,7 +481,7 @@ ShareToPool bool `json:"share_to_pool"` // Default: false (opt-in)
 
 ---
 
-## 5. Contribution Ledger System
+## 5. Contribution Ledger System (v4.0: Contribution Credit)
 
 ### 5.1 Three-Layer Architecture (Zero Cost)
 
@@ -954,7 +962,7 @@ Cross-Region Routing:
 
 ---
 
-## 9. Security Architecture
+## 9. Security Architecture (v4.0: Transmission Path Encryption)
 
 ### 9.1 Authorization Chain (P0 Priority)
 
@@ -997,7 +1005,7 @@ Security Layers:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 9.2 Relay Security
+### 9.2 Relay Security (v4.0: Transmission Path Encryption — relay invisible, resource node decrypts)
 
 ```go
 // Relay security measures (from source: network_relay.go)
@@ -1041,7 +1049,7 @@ Example: mmx-abc123def456
 
 ---
 
-## 10. BitTorrent Protocol Analogy
+## 10. BitTorrent Protocol Analogy (v4.0: Network Mode Only)
 
 ### 10.1 Concept Mapping
 
@@ -1184,83 +1192,47 @@ Optimization Strategies:
 
 ---
 
-## 12. Implementation Roadmap
+## 12. Implementation Roadmap (v4.0)
 
-### 12.1 Phase Overview
+### Phase 0 — Personal Mode MVP ✅ (Current)
+- [x] Go rewrite with embedded SQLite
+- [x] OpenAI-compatible API (proxy, streaming, models)
+- [x] 34+ provider support
+- [x] Intelligent routing (priority, weight, load-balance, failover)
+- [x] Multi-user management
+- [x] Provider Token encryption (OS Keyring)
+- [x] Embedded web control panel
+- [x] Key system v4.0 (4 key types, mk_* deprecated)
+- [x] Local quota management
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Implementation Phases                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  Phase 1: Core P2P Network ✅ COMPLETED                          │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │ ✅ 256-bit DHT with K-buckets (k=20)                   │    │
-│  │ ✅ Three key types (Proxy, Guest, Public)               │    │
-│  │ ✅ Relay mechanism with hop counting                    │    │
-│  │ ✅ Gossip-based peer discovery                          │    │
-│  │ ✅ Basic contribution tracking                          │    │
-│  │ ✅ Peer capabilities + ShareToPool toggle               │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                   │
-│  Phase 2: Contribution Ledger + Trust 🔄 IN PROGRESS             │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │ ✅ Reputation manager (EWMA scoring)                    │    │
-│  │ ✅ Grading system (S/A/B/C/D)                           │    │
-│  │ 🔄 Gossip Ledger (LevelDB + cross-validation)          │    │
-│  │ 🔄 Active probing implementation                        │    │
-│  │ 🔄 IPFS storage integration                             │    │
-│  │ 🔄 IOTA attestation integration                         │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                   │
-│  Phase 3: Advanced Routing ⏳ PLANNED                            │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │ ⏳ Cross-node intelligent routing                       │    │
-│  │ ⏳ Global load balancing (5-dimension scoring)          │    │
-│  │ ⏳ Regional awareness + cross-region failover           │    │
-│  │ ⏳ Choking algorithm (contribution-based priority)      │    │
-│  │ ⏳ Slow node detection (snubbing)                       │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                   │
-│  Phase 4: Token Economy 🔮 FUTURE (Optional)                     │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │ 🔮 TokenLedger interface implementation                 │    │
-│  │ 🔮 IOTA native token or custom credits                  │    │
-│  │ 🔮 Staking mechanism                                    │    │
-│  │ 🔮 DAO governance (optional)                            │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+### Phase 1 — Shared Network Minimum Viable Loop 🔜 (4-6 weeks)
+- [ ] Dual-mode architecture (Personal / Network Mode)
+- [ ] Mnemonic generation (BIP39 → Ed25519 → Node ID)
+- [ ] Two-level switch (`network_enabled` + `share_to_pool`)
+- [ ] Seed endpoint relay (single-hop)
+- [ ] Contribution Credit ledger (non-withdrawable, non-tradeable)
+- [ ] Transmission path encryption (relay-invisible)
+- [ ] Public Global Key (quadruple rate limits)
+- [ ] Idle quota detection and join prompt
+- [ ] Shared quota boundary configuration
 
-### 12.2 Detailed Phase 2 Tasks
+### Phase 2 — P2P Enhancement 🌐 (8-12 weeks)
+- [ ] DHT-based node discovery
+- [ ] Gossip protocol for capability announcements
+- [ ] Multi-hop relay with path selection
+- [ ] Transmission path encryption enhancement (per-hop)
+- [ ] NAT traversal (STUN/TURN)
+- [ ] Capability verification (probe-based)
+- [ ] False capability defense
 
-```
-Phase 2 Implementation Checklist:
+### Phase 3 — Autonomous Network 🧠 (12-16 weeks)
+- [ ] Reputation system
+- [ ] Notary decentralization (multi-notary redundancy)
+- [ ] Anti-collusion enhancement
+- [ ] Federated governance protocol
+- [ ] Cross-node audit trail
+- [ ] Zero central dependency operation
 
-Contribution Ledger:
-  □ ContributionRecord data structure
-  □ GossipLedger core methods (Record, Verify, Broadcast)
-  □ Ed25519 signature integration
-  □ Cross-validation (min 3 confirmations)
-  □ LevelDB local storage
-  □ LedgerSynchronizer for Layer 2
-
-Trust System:
-  □ Active probing scheduler
-  □ 1-token test request implementation
-  □ Progressive trust level tracking
-  □ Punishment automation (warn → isolate → ban)
-  □ Global ban broadcast
-
-Storage Integration:
-  □ IPFS client integration
-  □ IOTA zero-gas attestation
-  □ Major event filtering (>$100 threshold)
-  □ Sync interval management (hourly)
-```
-
----
 
 ## 13. Cost Analysis
 

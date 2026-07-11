@@ -19,8 +19,7 @@ type ContributionRecord struct {
 // StorageProof records where and how a contribution is stored on-chain / off-chain.
 type StorageProof struct {
 	IPFSHash        string `json:"ipfs_hash"`
-	IOTATxHash      string `json:"iota_tx_hash,omitempty"`
-	StorageLocation string `json:"storage_location"` // "ipfs" or "ipfs+iota"
+	StorageLocation string `json:"storage_location"` // "ipfs"
 	Verified        bool   `json:"verified"`
 }
 

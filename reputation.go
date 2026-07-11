@@ -146,15 +146,16 @@ func (r *ReputationManager) CalculateGrade(rep *NodeReputation) string {
 }
 
 func (r *ReputationManager) calculateGradeLocked(rep *NodeReputation) string {
+	// §8.4: 0-100 scale grading thresholds
 	score := rep.OverallScore
 	switch {
-	case score >= 200:
+	case score >= 95:
 		return "S"
-	case score >= 100:
+	case score >= 80:
 		return "A"
-	case score >= 50:
+	case score >= 60:
 		return "B"
-	case score >= 20:
+	case score >= 40:
 		return "C"
 	default:
 		return "D"
@@ -216,8 +217,12 @@ func (r *ReputationManager) SetOurScore(targetNodeID string, availability, laten
 		Timestamp:    time.Now().UTC().Format(time.RFC3339),
 		Signature:    "",
 	}
-	// Sign the score
-	score.Signature = node.SignJSON(score)
+	// Sign the score using canonical payload format (must match handlePostScore verification)
+	payload := fmt.Sprintf("%s:%s:%.0f:%.0f:%.0f:%s",
+		score.FromNode, score.TargetNode,
+		score.Availability, score.Latency, score.Accuracy,
+		score.Timestamp)
+	score.Signature = node.Sign([]byte(payload))
 
 	r.myScores[targetNodeID] = score
 	r.save()
