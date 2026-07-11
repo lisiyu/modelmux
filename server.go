@@ -227,6 +227,7 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("DELETE /api/network/peers/{id}", withAuth(handleNetworkRemovePeer))
 	mux.HandleFunc("GET /api/network/resolve/{id}", handleNetworkResolve)
 	mux.HandleFunc("GET /api/network/routes", withAuth(handleNetworkRoutes))
+	mux.HandleFunc("GET /api/network/join-conditions", withAuth(handleNetworkJoinConditions))
 
 	// v2.0 Guest Keys
 	mux.HandleFunc("POST /api/network/keys/issue", withAuth(handleGuestKeyIssue))
@@ -257,6 +258,15 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/network/global-pool/contribute", withAuth(handleGlobalPoolContribute))
 	mux.HandleFunc("GET /api/network/global-pool/nodes", handleGlobalPoolNodes)
 	mux.HandleFunc("GET /api/network/global-pool/stats", handleGlobalPoolStats)
+
+	// §10A: WAF status & management
+	mux.HandleFunc("GET /api/waf/status", withAuth(handleWAFStatus))
+	mux.HandleFunc("GET /api/waf/violations", withAuth(handleWAFViolations))
+	mux.HandleFunc("GET /api/waf/bans", withAuth(handleWAFBans))
+	mux.HandleFunc("POST /api/waf/unban/{key}", withAuth(handleWAFUnban))
+
+	// §3.2.3: Public key quota status
+	mux.HandleFunc("GET /api/network/public-key-quota", withAuth(handlePublicKeyQuotaStatus))
 
 	// Dynamic Load Balancer (Phase 4)
 	mux.HandleFunc("GET /api/network/loadbalancer/status", handleLBStatus)

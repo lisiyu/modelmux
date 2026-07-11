@@ -43,12 +43,17 @@ type NodeMetrics struct {
 
 // LBConfig holds tunable parameters for the load balancer.
 type LBConfig struct {
-	// Scoring weights (should sum to 1.0)
-	LatencyWeight    float64 `json:"latency_weight"`
-	LoadWeight       float64 `json:"load_weight"`
-	ErrorRateWeight  float64 `json:"error_rate_weight"`
-	FairnessWeight   float64 `json:"fairness_weight"`
-	ReputationWeight float64 `json:"reputation_weight"`
+	// Scoring weights — §9.2 five-dimension model (should sum to 1.0)
+	TrustWeight        float64 `json:"trust_weight"`
+	ReputationWeight   float64 `json:"reputation_weight"`
+	LatencyWeight      float64 `json:"latency_weight"`
+	AvailabilityWeight float64 `json:"availability_weight"`
+	ContributionWeight float64 `json:"contribution_weight"`
+
+	// Legacy field names (backward compat — mapped in handler)
+	LoadWeight       float64 `json:"load_weight,omitempty"`
+	ErrorRateWeight  float64 `json:"error_rate_weight,omitempty"`
+	FairnessWeight   float64 `json:"fairness_weight,omitempty"`
 
 	// Operational parameters
 	HealthCheckInterval time.Duration `json:"health_check_interval"`
@@ -87,11 +92,12 @@ var lbInstance *LoadBalancer
 // DefaultLBConfig returns sensible defaults.
 func DefaultLBConfig() LBConfig {
 	return LBConfig{
-		LatencyWeight:    0.35,
-		LoadWeight:       0.25,
-		ErrorRateWeight:  0.20,
-		FairnessWeight:   0.10,
-		ReputationWeight: 0.10,
+		// §9.2: Five-dimension weights
+		TrustWeight:        0.25, // Trust from peer interactions
+		ReputationWeight:   0.25, // Reputation manager score
+		LatencyWeight:      0.20, // Network latency
+		AvailabilityWeight: 0.15, // Node uptime/reliability
+		ContributionWeight: 0.15, // Contribution to the network
 
 		HealthCheckInterval: 30 * time.Second,
 		MetricsWindow:       20,
@@ -256,17 +262,22 @@ func (lb *LoadBalancer) ScoreNode(nodeID string) float64 {
 		latencyScore = 0
 	}
 
-	// --- load_score (0-100) ---
-	// Assume max 100 concurrent connections per node
-	const assumedMaxConns = 100
-	loadRatio := math.Min(float64(m.ActiveConns)/float64(assumedMaxConns), 1.0)
-	loadScore := 100.0 * (1.0 - loadRatio)
+	// --- trust_score (0-100) ---
+	trustScore := lb.getTrustScore(nodeID)
 
-	// --- error_score (0-100) ---
-	errorScore := 100.0 * (1.0 - math.Min(m.ErrorRate, 1.0))
+	// --- reputation_score (0-100) ---
+	reputationScore := lb.getReputationScore(nodeID)
 
-	// --- fairness_score (0-100) ---
-	// Fewer recent routes → higher score
+	// --- availability_score (0-100) ---
+	// Derived from error rate: low error = high availability
+	availabilityScore := 100.0 * (1.0 - math.Min(m.ErrorRate, 1.0))
+	// Also factor in health status
+	if !m.Healthy {
+		availabilityScore *= 0.5 // penalize unhealthy nodes
+	}
+
+	// --- contribution_score (0-100) ---
+	// Fewer recent routes → higher score (fairness in routing)
 	var maxHist int64 = 1
 	lb.mu.RLock()
 	for _, v := range lb.routeHistory {
@@ -275,17 +286,14 @@ func (lb *LoadBalancer) ScoreNode(nodeID string) float64 {
 		}
 	}
 	lb.mu.RUnlock()
-	fairnessScore := 100.0 * (1.0 - float64(histCount)/float64(maxHist+1))
+	contributionScore := 100.0 * (1.0 - float64(histCount)/float64(maxHist+1))
 
-	// --- reputation_score (0-100) ---
-	reputationScore := lb.getReputationScore(nodeID)
-
-	// --- composite ---
-	score := latencyScore*lb.config.LatencyWeight +
-		loadScore*lb.config.LoadWeight +
-		errorScore*lb.config.ErrorRateWeight +
-		fairnessScore*lb.config.FairnessWeight +
-		reputationScore*lb.config.ReputationWeight
+	// --- composite (§9.2) ---
+	score := trustScore*lb.config.TrustWeight +
+		reputationScore*lb.config.ReputationWeight +
+		latencyScore*lb.config.LatencyWeight +
+		availabilityScore*lb.config.AvailabilityWeight +
+		contributionScore*lb.config.ContributionWeight
 
 	return math.Round(score*100) / 100 // two decimal places
 }
@@ -307,6 +315,26 @@ func (lb *LoadBalancer) getReputationScore(nodeID string) float64 {
 
 
 	// Unknown node — neutral
+	return 50.0
+}
+
+// getTrustScore derives trust from peer's TrustScore field.
+// §9.2: Trust dimension (25%) — based on direct peer trust relationships.
+func (lb *LoadBalancer) getTrustScore(nodeID string) float64 {
+	if netMgr == nil {
+		return 50.0
+	}
+	netMgr.mu.RLock()
+	defer netMgr.mu.RUnlock()
+
+	for _, p := range netMgr.config.Peers {
+		if p.NodeID == nodeID {
+			// TrustScore is 0-1, scale to 0-100
+			return p.TrustScore * 100.0
+		}
+	}
+
+	// Unknown peer — neutral trust
 	return 50.0
 }
 
@@ -647,9 +675,23 @@ func handleLBConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Backward compat: map legacy field names to new ones if new fields are zero
+	if newCfg.TrustWeight == 0 && newCfg.LoadWeight > 0 {
+		newCfg.TrustWeight = newCfg.LoadWeight
+		newCfg.LoadWeight = 0
+	}
+	if newCfg.AvailabilityWeight == 0 && newCfg.ErrorRateWeight > 0 {
+		newCfg.AvailabilityWeight = newCfg.ErrorRateWeight
+		newCfg.ErrorRateWeight = 0
+	}
+	if newCfg.ContributionWeight == 0 && newCfg.FairnessWeight > 0 {
+		newCfg.ContributionWeight = newCfg.FairnessWeight
+		newCfg.FairnessWeight = 0
+	}
+
 	// Validate weights sum to ~1.0
-	totalWeight := newCfg.LatencyWeight + newCfg.LoadWeight + newCfg.ErrorRateWeight +
-		newCfg.FairnessWeight + newCfg.ReputationWeight
+	totalWeight := newCfg.TrustWeight + newCfg.ReputationWeight + newCfg.LatencyWeight +
+		newCfg.AvailabilityWeight + newCfg.ContributionWeight
 	if totalWeight < 0.9 || totalWeight > 1.1 {
 		writeError(w, 400, fmt.Sprintf("weights must sum to ~1.0 (got %.2f)", totalWeight))
 		return
@@ -674,11 +716,11 @@ func handleLBConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	lbInstance.mu.Unlock()
 
 	slog.Info("load balancer config updated",
+		"trust_w", newCfg.TrustWeight,
+		"reputation_w", newCfg.ReputationWeight,
 		"latency_w", newCfg.LatencyWeight,
-		"load_w", newCfg.LoadWeight,
-		"error_w", newCfg.ErrorRateWeight,
-		"fairness_w", newCfg.FairnessWeight,
-		"reputation_w", newCfg.ReputationWeight)
+		"availability_w", newCfg.AvailabilityWeight,
+		"contribution_w", newCfg.ContributionWeight)
 
 	writeJSON(w, 200, map[string]any{
 		"status": "updated",

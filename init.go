@@ -45,6 +45,12 @@ func initCore() {
 	// Global pool (Phase 4)
 	initGlobalPool("data")
 
+	// §10A: WAF four-layer protection
+	initWAF("data")
+
+	// §3.2.3: Public key four-layer quota
+	initPublicKeyQuota()
+
 	// Migrate: re-save to encrypt any plaintext sensitive data
 	cfg.save()
 	pm.save()
