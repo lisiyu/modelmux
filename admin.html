@@ -1880,9 +1880,26 @@ async function syncAllUrls() {
 async function syncAllDiscovered() {
   toast('正在添加已发现的平台...', 'info');
   try {
-    const r = await authFetch('/api/discovery/auto-add-all', { method: 'POST' });
-    const d = await r.json();
-    if (d.added > 0) { toast(`✅ 已添加 ${d.added} 个新平台`, 'success'); } else { toast('没有新的待添加发现', 'info'); }
+    // Get discovered platforms with status "reviewed" or empty
+    const r = await authFetch('/api/discovery/platforms');
+    const platforms = await r.json();
+    const pending = (platforms.platforms || platforms || []).filter(p => !p.status || p.status === 'new' || p.status === 'reviewed');
+    if (!pending.length) { toast('没有待添加的发现', 'info'); return; }
+    let added = 0;
+    for (const p of pending) {
+      try {
+        // Add as a provider
+        await authFetch('/api/providers', { method: 'POST', body: JSON.stringify({
+          id: p.id, name: p.name, type: 'openai_compatible',
+          base_url: p.base_url || p.api_base || '',
+          description: p.description || '', priority: 5, enabled: true
+        })});
+        // Mark as added
+        await authFetch('/api/discovery/platforms/' + p.id, { method: 'PUT', body: JSON.stringify({ status: 'added' })});
+        added++;
+      } catch(e) { console.warn('Failed to add', p.id, e); }
+    }
+    toast(`✅ 已添加 ${added} 个平台`, 'success');
     await loadProviders(); await loadStatus();
   } catch(e) { toast('添加失败: ' + e.message, 'error'); }
 }
@@ -1892,8 +1909,11 @@ async function checkNewDiscoveries() {
   try {
     const r = await authFetch('/api/discovery/scan', { method: 'POST' });
     const d = await r.json();
-    if (d.new_count > 0) { toast(`🔍 发现 ${d.new_count} 个新平台`, 'success'); } else { toast('暂无新发现', 'info'); }
-    await loadProviders(); await loadStatus();
+    if (d.status === 'started') { toast('🔍 扫描已启动，请稍后刷新查看结果', 'success'); }
+    else if (d.status === 'already_running') { toast('扫描正在进行中...', 'info'); }
+    else { toast('扫描完成', 'info'); }
+    // Reload after a short delay to let scan finish
+    setTimeout(() => { loadProviders(); loadStatus(); }, 3000);
   } catch(e) { toast('扫描失败: ' + e.message, 'error'); }
 }
 
@@ -1997,7 +2017,11 @@ async function saveProvider() {
   if (key) data.api_key = key;
   const proxy = document.getElementById('pProxy').value.trim();
   if (proxy) data.proxy = proxy;
-  else if (!editingId) { toast('请填写 API Key', 'error'); return; }
+  // Validate: new provider needs at least a key in pKey or inline form
+  if (!editingId && !key && !(data.api_keys && data.api_keys.length)) {
+    // Allow saving even without pKey if provider will have keys added via inline form later
+    // Don't block - the provider can exist with keys added separately
+  }
   // Carry over models from existing if editing
   if (editingId) {
     const existing = allProviders.find(x => x.id === editingId);
@@ -2526,24 +2550,27 @@ async function testAllKeys(pid) {
 function onPKeyEnter() {
   const keyVal = document.getElementById('pKey').value.trim();
   if (!keyVal) return;
-  // Show the multi-key section
-  document.getElementById('editKeysSection').style.display = '';
-  // If no keys loaded yet, show empty list placeholder
-  if (!document.getElementById('editKeysList').innerHTML.trim()) {
-    document.getElementById('editKeysList').innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:8px">暂无已配置的 Key</div>';
+
+  if (editingId) {
+    // Editing existing provider: move key to inline form for multi-key management
+    document.getElementById('editKeysSection').style.display = '';
+    if (!document.getElementById('editKeysList').innerHTML.trim()) {
+      document.getElementById('editKeysList').innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:8px">暂无已配置的 Key</div>';
+    }
+    editingKeyId = null;
+    document.getElementById('editKeysInlineRow').style.display = 'block';
+    document.getElementById('newKeyAlias').value = '';
+    document.getElementById('newKeyValue').value = keyVal;
+    document.getElementById('newKeyValue').placeholder = 'sk-...';
+    document.getElementById('newKeyQuota').value = '0';
+    document.getElementById('newKeyPriority').value = '1';
+    document.getElementById('newKeyAccess').value = 'private';
+    document.getElementById('pKey').value = '';
+    document.getElementById('newKeyAlias').focus();
+  } else {
+    // New provider: just submit the form immediately with the key
+    saveProvider();
   }
-  // Show inline form with key pre-filled
-  editingKeyId = null;
-  document.getElementById('editKeysInlineRow').style.display = 'block';
-  document.getElementById('newKeyAlias').value = '';
-  document.getElementById('newKeyValue').value = keyVal;
-  document.getElementById('newKeyValue').placeholder = 'sk-...';
-  document.getElementById('newKeyQuota').value = '0';
-  document.getElementById('newKeyPriority').value = '1';
-  document.getElementById('newKeyAccess').value = 'private';
-  // Clear the main pKey field
-  document.getElementById('pKey').value = '';
-  document.getElementById('newKeyAlias').focus();
 }
 
 function showInlineKeyForm(existingKey) {
