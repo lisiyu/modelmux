@@ -990,7 +990,7 @@ select.form-input{appearance:none;cursor:pointer}
       <div class="form-group"><label class="form-label">平台 ID</label><input class="form-input" id="pId" placeholder="deepseek"></div>
       <div class="form-group"><label class="form-label">显示名称</label><input class="form-input" id="pName" placeholder="DeepSeek"></div>
       <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
-      <div class="form-group"><label class="form-label">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..."></div>
+      <div class="form-group"><label class="form-label">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..." onkeydown="if(event.key==='Enter'){event.preventDefault();onPKeyEnter();}"></div>
       <div id="editKeysSection" style="display:none;margin-bottom:18px;padding:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <label style="font-size:13px;font-weight:500;color:var(--text-secondary)">🔑 已配置的多 Key 管理</label>
@@ -1001,19 +1001,19 @@ select.form-input{appearance:none;cursor:pointer}
           <div style="display:grid;grid-template-columns:1fr 2fr 100px 100px 80px;gap:8px;align-items:end;margin-bottom:8px">
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">别名</label>
-              <input id="newKeyAlias" class="form-input" style="font-size:12px;height:32px" placeholder="可选">
+              <input id="newKeyAlias" class="form-input" style="font-size:12px;height:32px" placeholder="可选" onkeydown="if(event.key==='Enter'){event.preventDefault();saveInlineKey();}">
             </div>
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">API Key *</label>
-              <input id="newKeyValue" class="form-input" style="font-size:12px;height:32px" placeholder="sk-...">
+              <input id="newKeyValue" class="form-input" style="font-size:12px;height:32px" placeholder="sk-..." onkeydown="if(event.key==='Enter'){event.preventDefault();saveInlineKey();}">
             </div>
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">额度(tokens)</label>
-              <input id="newKeyQuota" class="form-input" type="number" style="font-size:12px;height:32px" value="0" placeholder="0=无限">
+              <input id="newKeyQuota" class="form-input" type="number" style="font-size:12px;height:32px" value="0" placeholder="0=无限" onkeydown="if(event.key==='Enter'){event.preventDefault();saveInlineKey();}">
             </div>
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">优先级</label>
-              <input id="newKeyPriority" class="form-input" type="number" style="font-size:12px;height:32px" value="1" min="1">
+              <input id="newKeyPriority" class="form-input" type="number" style="font-size:12px;height:32px" value="1" min="1" onkeydown="if(event.key==='Enter'){event.preventDefault();saveInlineKey();}">
             </div>
             <div>
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">权限</label>
@@ -2496,6 +2496,30 @@ async function testAllKeys(pid) {
 // ============================================================
 
 // ===== Multi-Key Inline Editor =====
+// Handle Enter key in the main API Key field
+function onPKeyEnter() {
+  const keyVal = document.getElementById('pKey').value.trim();
+  if (!keyVal) return;
+  // Show the multi-key section
+  document.getElementById('editKeysSection').style.display = '';
+  // If no keys loaded yet, show empty list placeholder
+  if (!document.getElementById('editKeysList').innerHTML.trim()) {
+    document.getElementById('editKeysList').innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:8px">暂无已配置的 Key</div>';
+  }
+  // Show inline form with key pre-filled
+  editingKeyId = null;
+  document.getElementById('editKeysInlineRow').style.display = 'block';
+  document.getElementById('newKeyAlias').value = '';
+  document.getElementById('newKeyValue').value = keyVal;
+  document.getElementById('newKeyValue').placeholder = 'sk-...';
+  document.getElementById('newKeyQuota').value = '0';
+  document.getElementById('newKeyPriority').value = '1';
+  document.getElementById('newKeyAccess').value = 'private';
+  // Clear the main pKey field
+  document.getElementById('pKey').value = '';
+  document.getElementById('newKeyAlias').focus();
+}
+
 function showInlineKeyForm(existingKey) {
   const row = document.getElementById('editKeysInlineRow');
   row.style.display = 'block';
