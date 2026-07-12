@@ -461,6 +461,9 @@ func handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		if len(p.Models) == 0 {
 			p.Models = existing.Models
 		}
+		if len(p.APIKeys) == 0 {
+			p.APIKeys = existing.APIKeys
+		}
 	}
 
 	// For new providers: only enable the latest few models by default
