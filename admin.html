@@ -1020,7 +1020,6 @@ select.form-input{appearance:none;cursor:pointer}
               <select id="newKeyAccess" class="form-input" style="font-size:12px;height:32px">
                 <option value="private">🔒 私有</option>
                 <option value="shared">🔗 共享</option>
-                <option value="public">🌐 公共</option>
               </select>
             </div>
           </div>
@@ -2611,8 +2610,7 @@ async function loadEditKeys(pid) {
         const k = keys[i];
         const quotaText = k.quota > 0 ? (k.used.toLocaleString() + '/' + k.quota.toLocaleString()) : '无限';
         const statusBadge = k.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">禁用</span>';
-        const accessMap = { private: '🔒 私有', shared: '🔗 共享', public: '🌐 公共' };
-        const accessLabel = accessMap[k.access_control] || k.access_control || '私有';
+        const accessLabel = k.access_control === 'shared' ? '🔗 共享' : '🔒 私有';
         const maskedKey = k.key ? (k.key.substring(0, 4) + '••••' + k.key.substring(k.key.length - 4)) : '<span style="color:var(--text-muted)">未设置</span>';
         html += '<tr>';
         html += '<td>' + (k.alias || '-') + '</td>';
