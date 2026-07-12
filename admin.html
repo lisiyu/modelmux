@@ -55,7 +55,7 @@ select.form-input{appearance:none;cursor:pointer}
 .badge-blue{background:rgba(59,130,246,.15);color:var(--info);border:1px solid rgba(59,130,246,.3)}
 .badge-yellow{background:rgba(245,158,11,.15);color:var(--warning);border:1px solid rgba(245,158,11,.3)}
 /* Provider List */
-.provider-list{display:flex;flex-direction:column;gap:12px}
+.provider-list{display:flex;flex-direction:column;gap:12px;margin-top:16px}
 .provider-item{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;overflow:hidden;transition:all .3s}
 .provider-item:hover{border-color:rgba(108,99,255,.3)}
 .provider-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px}
@@ -709,20 +709,12 @@ select.form-input{appearance:none;cursor:pointer}
     </div>
   </div>
 
-  <!-- 平台管理 -->
-  <div class="card">
-    <div class="card-title" style="justify-content:space-between">
-      <span><span class="icon">🔌</span> 平台管理</span>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary btn-sm" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
-        <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加平台</button>
-      </div>
-    </div>
-    <div class="section-note">添加 AI 平台并配置 API Key，请求将根据模型名称自动路由到对应平台</div>
+  <!-- 节点概览 + 平台管理 -->
+  <div class="card" style="border-left:4px solid #3b82f6">
     <div id="nodeOverview"></div>
-    <div class="provider-list" id="providerList">
-      <div style="text-align:center;color:var(--text-muted);padding:30px"><div class="loading"></div><br>加载中...</div>
-    </div>
+  </div>
+  <div class="provider-list" id="providerList">
+    <div style="text-align:center;color:var(--text-muted);padding:30px"><div class="loading"></div><br>加载中...</div>
   </div>
 
 
@@ -1522,6 +1514,16 @@ function renderNodeOverview() {
   const enabledProviders = configured.filter(p => p.enabled);
   const totalModels = configured.reduce((s, p) => s + (p.models || []).length, 0);
   const enabledModels = configured.reduce((s, p) => s + (p.models || []).filter(m => m.enabled).length, 0);
+  // Private models = only on providers with private keys
+  const privateModels = configured.reduce((s, p) => {
+    const hasPrivate = (p.api_keys || []).some(k => k.access_control === 'private' || !k.access_control);
+    return s + (hasPrivate ? (p.models || []).length : 0);
+  }, 0);
+  // Shared models = only on providers with shared keys
+  const sharedModels = configured.reduce((s, p) => {
+    const hasShared = (p.api_keys || []).some(k => k.access_control === 'shared' || k.access_control === 'public');
+    return s + (hasShared ? (p.models || []).length : 0);
+  }, 0);
   const totalKeys = configured.reduce((s, p) => s + (p.api_keys || []).length, 0);
   const privateKeys = configured.reduce((s, p) => s + (p.api_keys || []).filter(k => k.access_control === 'private' || !k.access_control).length, 0);
   const sharedKeys = configured.reduce((s, p) => s + (p.api_keys || []).filter(k => k.access_control === 'shared' || k.access_control === 'public').length, 0);
@@ -1565,13 +1567,17 @@ function renderNodeOverview() {
       <span style="font-size:10px;color:#64748b;font-family:'SF Mono',Monaco,Consolas,monospace">${nodeId}</span>
       <span class="v8-overview-version">v${version}</span>
       <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
-        <button class="v7-btn" style="border-color:rgba(52,211,153,.4);color:#34d399" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
+        <button class="v7-btn" style="border-color:rgba(52,211,153,.4);color:#34d399" onclick="syncAllDiscovered()">📥 一键添加全部发现</button>
+        <button class="v7-btn" onclick="syncAllUrls()">🔄 一键同步全部地址</button>
+        <button class="v7-btn" style="border-color:rgba(52,211,153,.4);color:#34d399" onclick="checkNewDiscoveries()">🔍 新发现</button>
         <button class="v7-btn" style="background:rgba(96,165,250,.15);border-color:rgba(96,165,250,.4);color:#60a5fa" onclick="showAddProvider()">+ 添加平台</button>
       </div>
     </div>
     <div class="v8-merged-row" style="gap:12px">
       <div class="v8-stats-group">
         <span class="v8-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型统计：</span>
+        <span class="v8-stat-pill">私有 <b class="blue">${privateModels}</b></span>
+        <span class="v8-stat-pill">共享 <b class="purple">${sharedModels}</b></span>
         <span class="v8-stat-pill">启用 <b class="green">${enabledModels}</b></span>
         <span class="v8-stat-pill">总计 <b class="yellow">${totalModels}</b></span>
         <div class="v8-keys-pill">
@@ -1592,7 +1598,7 @@ function renderNodeOverview() {
           <div class="v8-quota-connect-item"><span class="v8-quota-connect-num">${totalKeys}</span><span class="v8-quota-connect-sub">连接数</span></div>
         </div>
         <div class="v8-quota-value blue">∞ / ∞</div>
-        <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill emerald" style="width:15%"></div></div>
+        <div class="v8-quota-bar-wrap"><div class="v8-quota-bar-fill emerald" style="width:${todayReqsAll > 0 ? '15%' : '0%'}"></div></div>
       </div>
       <div class="v8-quota-cell">
         <div class="v8-quota-label">公共池 <span style="font-size:9px;color:#64748b;font-weight:400">(${publicPct}%)</span></div>
@@ -1869,6 +1875,26 @@ async function syncAllUrls() {
     if (d.changed > 0) { toast(`✅ 已更新 ${d.changed} 个平台的地址`, 'success'); } else { toast('所有平台地址已是最新，无需更新', 'info'); }
     await loadProviders();
   } catch(e) { toast('同步失败: ' + e.message, 'error'); }
+}
+
+async function syncAllDiscovered() {
+  toast('正在添加已发现的平台...', 'info');
+  try {
+    const r = await authFetch('/api/discovery/auto-add-all', { method: 'POST' });
+    const d = await r.json();
+    if (d.added > 0) { toast(`✅ 已添加 ${d.added} 个新平台`, 'success'); } else { toast('没有新的待添加发现', 'info'); }
+    await loadProviders(); await loadStatus();
+  } catch(e) { toast('添加失败: ' + e.message, 'error'); }
+}
+
+async function checkNewDiscoveries() {
+  toast('正在扫描新平台...', 'info');
+  try {
+    const r = await authFetch('/api/discovery/scan', { method: 'POST' });
+    const d = await r.json();
+    if (d.new_count > 0) { toast(`🔍 发现 ${d.new_count} 个新平台`, 'success'); } else { toast('暂无新发现', 'info'); }
+    await loadProviders(); await loadStatus();
+  } catch(e) { toast('扫描失败: ' + e.message, 'error'); }
 }
 
 // ===== Add/Edit Provider Modal =====
