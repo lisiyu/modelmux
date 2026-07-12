@@ -145,8 +145,6 @@ type Provider struct {
 	Models      []ModelDef `json:"models"`
 	Priority    int        `json:"priority"`
 	TokenLimit  int64      `json:"token_limit,omitempty"` // monthly token budget, 0=unlimited
-	DailyTokenLimit int64 `json:"daily_token_limit,omitempty"` // daily token limit, 0=unlimited
-	RateLimitPerMin int   `json:"rate_limit_per_min,omitempty"` // requests per minute limit, 0=unlimited
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
 	APIKeyURL   string     `json:"api_key_url,omitempty"`
@@ -166,8 +164,6 @@ type Provider struct {
 type ProviderAccessControl struct {
 	// AllowGuest allows sk-guest-* keys (default true)
 	AllowGuest bool `json:"allow_guest"`
-	// AllowSharedKey allows shared/public API keys to access this provider
-	AllowSharedKey bool `json:"allow_shared_key"`
 	// ShareToPool controls whether this provider's resources are shared to the
 	// global public pool accessible via sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1 keys.
 	// Default: true — providers are shared to the pool when the node joins the network.
@@ -275,15 +271,6 @@ type AdminData struct {
 	CreatedAt    string `json:"created_at"`
 }
 
-// Collaborator represents a collaborator account with limited admin access
-type Collaborator struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"password_hash"`
-	GuestKey     string `json:"guest_key"`        // associated guest key
-	CreatedAt    string `json:"created_at"`
-	LastLogin    string `json:"last_login,omitempty"`
-}
-
 type SMTPConfig struct {
 	Host      string `json:"host"`
 	Port      int    `json:"port"`
@@ -310,7 +297,6 @@ type AdminStore struct {
 	// P0-2: Independent reset code (replaces Proxy API Key reuse for password reset)
 	ResetCodeHash   string `json:"reset_code_hash,omitempty"`
 	ResetCodeExpires string `json:"reset_code_expires,omitempty"`
-	Collaborators []Collaborator `json:"collaborators,omitempty"`
 }
 
 // ============================================================
@@ -426,7 +412,6 @@ type NodeInfo struct {
 	GitHubUser     string             `json:"github_user"`
 	GitHubID       int64              `json:"github_id,omitempty"`
 	Endpoint       string             `json:"endpoint"`
-	Addresses      []string           `json:"addresses,omitempty"` // all reachable URLs (HTTPS preferred)
 	PubKey         string             `json:"pub_key"` // ed25519 base64
 	SharedModels   []string           `json:"shared_models"`
 	SharedProviders []SharedProvider  `json:"shared_providers"`
@@ -439,6 +424,7 @@ type NodeInfo struct {
 	InviteBy       string             `json:"invite_by,omitempty"`
 	TokenBudget    int64              `json:"token_budget"`    // monthly token budget declaration (0 = unlimited)
 	TokenUsed      int64              `json:"token_used"`      // tokens used this month
+	Addresses      []string           `json:"addresses,omitempty"` // multi-address support (P2P)
 }
 
 // SharedProvider is a provider advertised by a remote node (no API key!).

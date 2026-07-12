@@ -57,7 +57,7 @@ func (h *HealthChecker) run() {
 }
 
 func (h *HealthChecker) checkAll() {
-	providers := pm.EnabledRaw()
+	providers := pm.Enabled()
 	// Update statuses map for new providers
 	h.mu.Lock()
 	for _, p := range providers {
