@@ -1,322 +1,1151 @@
-# OpenModelPool 项目路线图 v4.0
+# OpenModelPool Agent
 
-> **版本**: v4.0 | **日期**: 2026-07-11 | **状态**: 规划
+**Personal Model Proxy + Geek Sharing Network** — Your local AI gateway first, then optionally join the global AI capability sharing network.
 
-本文档是 OpenModelPool 从个人版 MVP 到全球自治网络的技术路线图。
+> Network has no borders; AI capabilities shouldn't either.
 
----
-
-## 目录
-
-1. [路线图总览](#1-路线图总览)
-2. [Phase 0: 个人版 MVP](#2-phase-0-个人版-mvp)
-3. [Phase 1: 共享版最小闭环](#3-phase-1-共享版最小闭环)
-4. [Phase 2: P2P 增强](#4-phase-2-p2p-增强)
-5. [Phase 3: 自治网络](#5-phase-3-自治网络)
-6. [各阶段里程碑与交付物](#6-各阶段里程碑与交付物)
-7. [版本兼容性策略](#7-版本兼容性策略)
-8. [历史变更记录](#8-历史变更记录)
+[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-v4.0.1-blue)](#)
 
 ---
 
-## 1. 路线图总览
+## 🤖 What Is It?
+
+**OpenModelPool Agent is a temporary Token bank + a geek sharing network.**
+
+By default, it is a **pure-local personal model proxy** — managing your API tokens, providing a unified OpenAI-compatible interface, and tracking usage. No network, no sharing, no network identity generated.
+
+Only when you configure Provider Tokens, enable quota management, and the system detects idle quota this month, will it gently prompt you: **Would you like to share some idle quota to the network?**
+
+> Your GPT-4o quota is only 60% used this month? The remaining 40% expires and goes to waste.
+> Share it to the OpenModelPool network, and you earn **Contribution Credits** when others use it.
+> When you need Claude-3 in the future, use Contribution Credits to reclaim equivalent resources.
+> If you never reclaim — these contributions naturally become a geek gift to the community.
+
+**Three principles**:
+- Configuring Token ≠ Joining the sharing network
+- Having idle quota ≠ Auto-sharing
+- Joining the sharing network ≠ Sharing all quota
+
+To upstream providers, this is exactly the same as anyone calling the API directly — same Key, same quota, same provider. **No "reselling", no "middleman", just an Agent forwarding your requests.**
+
+---
+
+## 🌍 Our Belief
+
+The internet's greatest creation was breaking the boundaries of information.
+
+BitTorrent let knowledge escape server monopolies; IPFS let storage escape single-node dependency; Tor let communication escape geographic constraints.
+
+**OpenModelPool Agent does the same thing — but what's shared is not files, but AI capabilities.**
+
+We believe a developer in New York with a Claude API and a programmer in Beijing have equally valuable access. When global AI capabilities converge through a decentralized network, anyone can equally access the most powerful intelligence — regardless of where they are.
+
+This is not a commercial product. This is the continuation of internet spirit: **sharing, openness, no borders.**
+
+> **v4.0.1 Note**: In the BT network, seeders could be anonymous and still participate. In OpenModelPool, joining the sharing network requires an identity (mnemonic → Ed25519 key pair → Node ID), and Contribution Credits are bound to identity. This is not for censorship, but for Sybil defense — ensuring contributions are traceable and preventing one person from impersonating a thousand nodes to farm credits.
+>
+> We also provide a **Public Global Key** — anyone can use it to experience model capabilities in the network with zero barrier. It's a low-quota experience entry with quadruple rate limiting, not guaranteed always-available, but lets you feel the network's value at zero cost.
+
+---
+
+## ✨ Core Features
+
+### 🏠 Personal Mode (Default)
+
+Personal Mode is a pure-local proxy — no network participation, no identity generation, no sharing.
+
+#### 🔌 Unified API Gateway
+
+- **OpenAI-compatible interface** — Unified `/v1/chat/completions`, supporting streaming (SSE) and non-streaming, zero-copy forwarding
+- **36 preset platforms** — Coze, Sider.ai, OpenAI, Anthropic Claude, DeepSeek, Gemini, Qwen, Zhipu, Moonshot, MiniMax, SiliconFlow, Groq, xAI, Together, Mistral, Doubao, iFlytek, NVIDIA NIM, TokenHub (Coding/Plan/Enterprise), Baidu Qianfan, Stepfun, Baichuan, Novita AI, Fireworks AI, Cohere, Cerebras, OpenRouter, Poe, SID.ai, Agnes AI, AIHubMix, Ollama, LM Studio, and more
+- **`provider/model` syntax** — Route to specific platforms via `deepseek/deepseek-chat` format, also supports OpenRouter-style routing
+- **Auto platform discovery** — Automatically scans and discovers free AI platforms on the internet
+
+#### 🧠 5-Dimension Intelligent Routing
+
+| Mode | Strategy |
+|------|----------|
+| 🎯 Priority | Sorted by preset priority |
+| 💰 Cheapest | Selects the cheapest platform by `platform × model` pricing |
+| ⚡ Fastest | Selects the fastest platform based on EWMA historical latency |
+| 🧠 Composite | Weighted fusion of **5 dimensions**: **Trust 25%** + **Reputation 25%** + **Latency 20%** + **Availability 15%** + **Contribution 15%** |
+
+> All 5 composite weight dimensions are customizable via the admin panel.
+
+#### 🔗 Automatic Failover
+
+Failed requests automatically switch to the next available Provider, forming a fallback chain until success or all candidates exhausted.
+
+#### 👥 Multi-User Support
+
+- **Invite code registration** — Admin generates invite codes, consumers self-register
+- **Provider sharing** — Consumers can add their own Providers to the unified proxy pool
+- **Strict visibility isolation** — Admin sees all; consumers see only their own + system presets
+- **Independent API Key** — Each consumer has an independent Proxy API Key
+- **Usage tracking** — Per-consumer Token consumption and request count statistics
+- **Multi-key management** — Multiple API Keys per Provider with individual quota control
+
+#### 💰 Token Budget Management
+
+- **Dual-dimension pricing** — Per `platform × model` input/output price per million Tokens (USD)
+- **Monthly budget** — Set monthly Token limits per Provider
+- **Threshold alerts** — Automatic email alerts at 80% / 90% / 100% thresholds
+
+#### 🩺 Provider Auto Health Check
+
+- Concurrent probing every **5 minutes** for all enabled Providers
+- Status tracking: `healthy` / `degraded` / `down` / `unknown`
+- Consecutive failure count, last success/failure time, failure reasons
+
+#### 🛡️ WAF 4-Layer Protection
+
+| Layer | Function |
+|-------|----------|
+| Layer 1: Rate Limit | Global QPS + per-NodeID QPS + per-IP QPS (token bucket) |
+| Layer 2: Token Limit | Pre-request token estimation guardrails |
+| Layer 3: Content Safety | L1 hard block / L2 soft block / L3 log-only |
+| Layer 4: Behavioral | High-frequency repetition / anomaly detection |
+
+Escalating enforcement: warn → record → temp ban (2h) → long ban (7d) → permanent ban.
+
+#### 🔐 Security & Encryption
+
+- **AES-256-GCM** — All sensitive data (API Keys, SMTP passwords, Proxy API Keys) encrypted at rest
+- **bcrypt** — Admin password hashing
+- **JWT** — Token authentication with expiration
+- **Data integrity** — HMAC-SHA256 signatures on critical data files to detect tampering
+- **Rate limiting** — Token bucket algorithm with per-IP and per-Consumer independent limits
+
+#### 📝 Request Logging
+
+- **In-memory ring buffer** — Up to 1000 request records, real-time view
+- Fields: time, model, Provider, latency, Token count, cost, success/failure, retry count, streaming
+
+#### 📊 Usage Archiving
+
+- Daily / monthly automatic usage data archiving
+- 7-day / 30-day statistical views
+- EWMA (Exponentially Weighted Moving Average) latency tracking
+
+#### 📧 SMTP Email Service
+
+- **Forgot password** — Email reset code for admin password recovery
+- **Password reset** — Via Proxy API Key
+- **Budget alerts** — Token budget threshold email notifications
+- **SMTP test** — One-click email test in admin panel
+
+#### 🌐 VMess Proxy Support
+
+- Parse `vmess://` links, auto-start local Xray proxy
+- Configure VMess outbound proxy per Provider for transparent request forwarding
+- Auto-restore all VMess proxies on startup
+
+#### 🖥️ Web Admin Panel
+
+- **Dark theme**, responsive design, mobile-friendly
+- Initial setup wizard
+- Provider management (CRUD, connectivity test, model list sync)
+- Routing mode / weight configuration
+- Usage statistics and request logs
+- Invite code and consumer management
+- Config export / import (AES-256-GCM encrypted)
+- SMTP configuration management
+
+---
+
+### 🌐 Network Mode (Opt-In)
+
+> **⚠️ Network Mode is disabled by default.** Personal Mode does all local proxying without any network activity.
+
+When you opt in, your node joins the **AI Capability Sharing Network** — a decentralized P2P network where nodes share AI model access and exchange Contribution Credits.
+
+#### 🔑 Identity System (BIP39 Mnemonic)
+
+| Component | Description |
+|-----------|-------------|
+| **BIP39 Mnemonic** | Generated when joining the network (12/24 words), manually backed up, never uploaded |
+| **Ed25519 Key Pair** | Derived from mnemonic; private key never leaves this node; public key broadcast network-wide |
+| **Node ID** | Unique identifier: `mmx-` + Base58(Ed25519 public key first 16 bytes) |
+| **Signing** | All broadcast data (Providers, scores, credit transactions) signed by node private key |
+
+#### 🌍 P2P Node Discovery (Triple-Layer)
+
+| Mechanism | Purpose | Protocol |
+|-----------|---------|----------|
+| **Peer Seed** (:8001) | Initial bootstrapping; every online node can serve as seed | HTTPS + dynamic seed list |
+| **Kademlia DHT** | Global node routing, capability registration (256-bit hash space, k=20 buckets) | SHA-256 XOR distance metric |
+| **Gossip Protocol** | Real-time state propagation (node online/offline, capability changes) | Plumtree / Scuttlebutt variant |
+| **LAN Discovery** | Local network node auto-discovery | mDNS |
+
+#### 🏆 Reputation System (EWMA-Tracked, S/A/B/C/D Grades)
+
+| Grade | Score | Description |
+|-------|-------|-------------|
+| **S** | ≥ 200 | Excellent node, priority routing |
+| **A** | ≥ 100 | Quality node |
+| **B** | ≥ 50 | Normal node |
+| **C** | ≥ 20 | Needs improvement |
+| **D** | < 20 | Probation, may be removed after 7 days |
+
+**Scoring formula**: `Score = Success Rate × 40% + Avg Latency × 25% + Uptime × 20% + Peer Rating × 15%`
+**EWMA smoothing**: `New Score = 0.3 × Current + 0.7 × Previous` (α=0.3)
+
+#### 💎 Contribution Credit System
+
+- **Earn**: Provide Provider resources that other nodes consume → earn Contribution Credits (requests without request-id are not counted)
+- **Spend**: Call other nodes' Providers, send P2P messages, etc.
+- **Non-withdrawable**: Cannot be exchanged for fiat or financial assets
+- **Non-transferable**: Cannot be transferred between nodes
+- **Bound to Node ID**: Credits follow identity, not device
+- **Anti-double-spend**: Each transaction includes predecessor hash, chain verification
+
+#### 🔑 Key System
+
+| Key Type | Prefix | Purpose |
+|----------|--------|---------|
+| Proxy API Key | `sk-` | Admin-configured proxy access key |
+| Guest Proxy Key | `gk-` | Temporary access keys issued to guests, with quota limits |
+| Public Global Key | `pk-` | Public experience key for zero-barrier network access, quadruple rate-limited |
+| Provider Key | — | Upstream provider API keys (encrypted at rest) |
+
+#### 🔄 Quota Allocation (Guest Key / Public Key Pool)
+
+Nodes configure how their shared resources are allocated:
+- **Guest Key Pool**: Portion contributed to guest access (default 50%)
+- **Public Key Pool**: Portion contributed to public global access (default 50%)
+- Adjustable per node via admin panel
+
+#### ⚖️ Health-Aware Load Balancer
+
+The network load balancer uses a 5-dimension scoring model for optimal node selection:
+
+| Dimension | Weight | Description |
+|-----------|--------|-------------|
+| Trust | 25% | Trust from peer interactions |
+| Reputation | 25% | Reputation Manager score |
+| Latency | 20% | Network latency |
+| Availability | 15% | Node uptime / reliability |
+| Contribution | 15% | Contribution to the network |
+
+Real-time metrics tracked per node: latency, CPU, memory, error rate, active connections, sliding-window history.
+
+#### 🌐 Public Access (Cloudflare Tunnel)
+
+- **Quick Tunnel** (default): Free, no domain needed, auto-generated temporary address
+- **Named Tunnel**: Custom domain with Cloudflare API Token for full automation
+- **Manual Binding**: Bind your own domain without Cloudflare API
+
+#### 📡 Network API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/peers` | List all known peer nodes |
+| `POST /api/register` | Node self-registration (heartbeat) |
+| `GET /api/seed/health` | Seed service health check |
+| `GET /api/network/status` | Current network status |
+| `GET /api/network/peers` | Manage peer connections |
+| `GET /api/network/routes` | View routing table |
+| `GET /api/network/guest-keys` | Manage Guest Keys |
+| `POST /api/network/guest-keys` | Issue new Guest Key |
+| `GET /api/network/loadbalancer/status` | Load balancer status |
+| `GET /api/waf/status` | WAF protection status |
+| `GET /api/waf/violations` | WAF violation log |
+| `GET /api/network/algorithm/current` | Current routing algorithm |
+| `GET /api/network/regions` | Network region information |
+| `GET /api/network/balance/status` | Load balance status |
+
+---
+
+## 🧭 Project Vision
+
+OpenModelPool Agent evolves from a lightweight personal AI proxy into a **decentralized AI capability sharing network**:
 
 ```
-Phase 0                Phase 1                 Phase 2              Phase 3
-个人版 MVP              共享版最小闭环            P2P 增强              自治网络
-(当前 ✅)               🔜 4-6周                 🌐 8-12周              🧠 12-16周
-                      
-┌────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐
-│ 本地代理     │    │ 双模式架构     │    │ 多跳路由       │    │ 声誉系统          │
-│ 额度管理     │ →  │ 助记词身份     │ →  │ 传输路径加密    │ →  │ 公证人去中心化     │
-│ 34+ 平台    │    │ 单跳中继       │    │ P2P 能力发现   │    │ 完全无中心依赖     │
-│ 4 维路由     │    │ 贡献积分       │    │ 能力验证协议   │    │ 全球节点自治       │
-│ 密钥体系v4   │    │ 两级开关       │    │ 混合穿透       │    │ 治理投票          │
-└────────────┘    └──────────────┘    └──────────────┘    └──────────────────┘
+  Phase 0                    Phase 1                    Phase 2                    Phase 3
+┌──────────────┐      ┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│ Personal MVP │  →→  │ Min Viable Share │  →→  │ P2P Enhancement  │  →→  │ Autonomous Network│
+│ Local proxy  │      │ Dual-mode arch   │      │ Multi-hop relay  │      │ Reputation system│
+│ Quota mgmt   │      │ Mnemonic identity│      │ Path encryption  │      │ Decentralized    │
+│ 36 platforms │      │ Single-hop relay │      │ P2P discovery    │      │ governance       │
+│ 5-dim router │      │ Contribution     │      │ Capability verify│      │ Full self-govern │
+└──────────────┘      └──────────────────┘      └──────────────────┘      └──────────────────┘
 ```
 
-> **v4.0 本质变化**：默认启动永远是个人版；只有配置 Provider Token、开启额度管理且本月有剩余额度时，才温和提示加入共享网络。加入共享网络后才生成助记词和 Node ID。
+- **Phase 0** ✅ Personal MVP (current) — 36 platforms, 5-dimension routing, multi-user, local quota management, WAF, Token estimation
+- **Phase 1** 🔜 Min Viable Sharing — Dual-mode architecture, mnemonic identity, single-hop relay, Contribution Credits, two-level switch
+- **Phase 2** 🌐 P2P Enhancement — Multi-hop relay, transport path encryption, P2P capability discovery, capability verification protocol
+- **Phase 3** 🧠 Autonomous Network — Reputation system, notary decentralization evolution, fully self-governing
+
+> See [ROADMAP_v3.md](ROADMAP_v3.md) for details
 
 ---
 
-## 2. Phase 0: 个人版 MVP
+## 🚀 Quick Start
 
-**目标**：完成单节点智能代理的核心功能，作为本地 AI 模型代理独立可用。
+### One-Click Install (Recommended)
 
-**状态**：✅ 基本完成
+**Linux / macOS:**
 
-### 2.1 已完成功能
+```bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash
+```
 
-#### 核心架构
-- ✅ Go 1.23+ 单体架构
-- ✅ 嵌入式 SQLite 数据存储（GORM）
-- ✅ 内嵌 Web 前端（零配置部署）
-- ✅ 多 OS 架构支持（linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64）
+Custom parameters:
 
-#### API 代理核心
-- ✅ OpenAI 兼容接口（/v1/models, /v1/chat/completions）
-- ✅ 流式 SSE 转发 + 非流式转发
-- ✅ 8 个上游提供商支持（Coze, Sider.ai, OpenAI, DeepSeek, xAI, Groq, 硅基流动, Ollama）
-- ✅ 扩展至 34+ 预置提供商
-- ✅ Provider Token OS Keyring 加密存储（go-keyring）
-- ✅ Token 使用量跟踪（输入/输出 Token 统计）
-- ✅ 本地额度管理（每日 Token 限额、每分钟 RPM 限制）
+```bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.sh | bash -s -- --port 9090 --dir /opt/openmodelpool
+```
 
-#### 路由系统
-- ✅ 多维路由策略（优先级、权重、负载均衡、故障切换）
-- ✅ ProviderSelector 重构（策略驱动）
-- ✅ 基于健康检查的提供者选择
-- ✅ 模型映射（上游 ID 到标准化模型名称）
-- ✅ 模型能力矩阵
+**Windows (PowerShell as Admin):**
 
-#### 用户管理
-- ✅ 多用户管理
-- ✅ 基础认证与授权
-- ✅ 管理员控制面板
+```powershell
+irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/install.ps1 | iex
+```
 
-#### 配置管理
-- ✅ 基于文件和环境变量的配置
-- ✅ 首次运行自动初始化
-- ✅ 配置文件生成与密钥管理
+The install script auto-detects platform → downloads binary → SHA256 verification → installs → registers system service → starts automatically.
 
-### 2.2 密钥体系 v4.0（已完成）
+### Build from Source
 
-| Key 类型 | 前缀 | 生成方式 | 存储位置 | 用途 | 数据库表 |
-|---------|------|---------|---------|------|---------|
-| **Proxy API Key** | `ompk_` | 随机生成 | DB（AES-256-GCM 加密） | 日常 API 调用 | `api_keys` (proxy) |
-| **Guest Proxy Key** | `omgk_` | 随机生成 | DB（AES-256-GCM 加密） | 访客临时密钥 | `guest_keys` |
-| **Public Global Key** | `global` | 管理员配置 | 配置文件 | 公共体验入口 | 内置 |
-| **Provider Key** | `provider` | 用户输入 | OS Keyring | 大模型 API Token | `provider_keys` |
+```bash
+# Clone
+git clone https://github.com/lisiyu/openmodelpool.git
+cd openmodelpool
 
-> ~~`omsk_*` 系列（mk_, mk-rk_, mk-chk_）已在 v4.0 中废弃~~。
+# Build for current platform
+make build
 
-### 2.3 交付物
+# Run (default port 8000)
+./openmodelpool
+```
 
-- ✅ 可运行的单节点代理二进制文件
-- ✅ Docker 镜像
-- ✅ 基本文档（README, API 文档）
+### Docker Deployment
+
+```bash
+# Docker Compose (recommended)
+docker compose up -d
+
+# Or manually
+docker build -t openmodelpool .
+docker run -d --name openmodelpool -p 8000:8000 -v $(pwd)/data:/app/data openmodelpool
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Service port | `8000` |
+| `COZE_API_TOKEN` | Coze PAT (optional, configurable in panel) | — |
+| `COZE_BOT_ID` | Default Coze Bot ID | — |
+
+### First Use
+
+1. Visit `http://localhost:8000` to enter the setup wizard
+2. Set admin account (username, password, email)
+3. Add Providers and fill in API Keys in the admin panel
+4. Done! Call via `/v1/chat/completions`
 
 ---
 
-## 3. Phase 1: 共享版最小闭环
+## 📡 API Documentation
 
-**目标**：引入双模式架构，用户可以从个人版升级到共享版，实现单跳中继共享。
+### Proxy Interface (OpenAI Compatible)
 
-**预计时间**：4-6 周
+#### `GET /v1/models`
 
-### 3.1 双模式架构
+List all available models.
 
-#### 3.1.1 个人版（Personal Mode）— 默认
-
-| 功能 | 说明 |
-|------|------|
-| 本地 Provider Token 管理 | Keyring 加密存储 |
-| 本地 OpenAI-compatible API 代理 | `http://127.0.0.1:8080/v1` |
-| 本地额度管理与调用统计 | |
-| 管理员界面 | |
-
-#### 3.1.2 共享版（Network Mode）— 按需加入
-
-**触发条件（全部满足）**：
-- ✅ 已配置至少一个 Provider Token
-- ✅ 该 Token 已开启额度管理
-- ✅ 本月 remaining_quota > 0
-
-**额外启用**：
-- Node ID + 助记词
-- P2P 网络基础（Seed 端点连接）
-- 贡献账本与贡献积分
-- Guest Proxy Key
-- Public Global Key
-- 能力声明（CapabilityClaim）
-- 共享额度配置
-
-### 3.2 两级开关
-
-| 开关 | 作用 | 默认值 |
-|------|------|-------|
-| `network_enabled` | 是否加入共享网络 | `false` |
-| `share_to_pool` | 是否将剩余额度共享到网络 | `false` |
-
-两个开关完全独立，用户可以只入网不共享（只做消费者），也可以只共享不入网（不可能，必须先入网）。
-
-### 3.3 助记词机制
-
-```
-用户点击"加入共享网络"
-  ↓
-展示项目说明（公益共享、绝不发币、Key 不上传）
-  ↓
-用户确认理解共享机制
-  ↓
-生成 BIP39 助记词（12/24 词）
-  ↓
-由助记词派生 Ed25519 私钥
-  ↓
-生成公钥 → Node ID = hash(public_key)
-  ↓
-强制用户备份助记词（抄写/加密导出）
-  ↓
-配置共享额度边界
-  ↓
-进入共享网络
+```bash
+curl http://localhost:8000/v1/models \
+  -H "Authorization: Bearer YOUR_PROXY_KEY"
 ```
 
-### 3.4 贡献积分（Contribution Credit）
+#### `POST /v1/chat/completions`
 
-- 贡献积分**不可提现、不可交易**
-- 绑定 Node ID，跟随身份
-- 记录用户对网络的贡献，以及从网络中获取资源的权利
-- request-id 缺失的请求不计入积分
+Chat completions, fully compatible with OpenAI API format.
 
-### 3.5 单跳中继
+**Non-streaming:**
 
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_PROXY_KEY" \
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
 ```
-请求节点 → Seed 端点（中继） → 资源节点
-              ↑
-         传输路径加密（中继不可见）
+
+**Streaming (SSE):**
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_PROXY_KEY" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Write a poem"}],
+    "stream": true
+  }'
 ```
 
-### 3.6 里程碑
+**Specify platform:**
 
-- [ ] 双模式架构实现（Personal / Network Mode 切换）
-- [ ] 助记词生成与备份流程
-- [ ] Node ID 生成（BIP39 → Ed25519 → hash）
-- [ ] 两级开关 UI（`network_enabled` + `share_to_pool`）
-- [ ] Seed 端点中继服务
-- [ ] 贡献积分账本（Contribution Credit）
-- [ ] 传输路径加密（中继不可见）
-- [ ] 能力声明协议（CapabilityClaim）
-- [ ] Public Global Key 四重限额实现
-- [ ] 闲置额度检测与加入提示
-- [ ] 共享额度边界配置 UI
+```bash
+# provider/model format forces routing to a specific platform
+curl ... -d '{"model": "deepseek/deepseek-chat", ...}'
+```
+
+#### `POST /v1/completions`
+
+Legacy completions endpoint (same handler as chat/completions).
+
+#### `POST /v1/embeddings`
+
+Embeddings endpoint (same handler, supports embedding models).
+
+### Authentication
+
+| Method | Header | Description |
+|--------|--------|-------------|
+| Proxy API Key | `Authorization: Bearer sk-xxx` | Admin-configured proxy key |
+| Consumer API Key | `Authorization: Bearer ck-xxx` | Consumer independent key |
+| Guest Proxy Key | `Authorization: Bearer gk-xxx` | Temporary guest access key |
+| Public Global Key | `Authorization: Bearer pk-xxx` | Public experience key (rate-limited) |
+
+> If no Proxy API Key is set, proxy endpoints allow anonymous access (admin privilege).
+
+### Management API
+
+#### Auth (Public)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/setup/status` | Check if initial setup is done |
+| `POST` | `/api/setup` | Initialize admin account |
+| `POST` | `/api/login` | Admin login |
+| `POST` | `/api/forgot-password` | Send password reset email |
+| `POST` | `/api/reset-password` | Reset password via email code |
+| `POST` | `/api/reset-password/verify` | Verify reset token |
+| `POST` | `/api/auth/reset-with-code` | Reset password via Proxy API Key |
+| `GET` | `/api/addresses` | Get bound addresses |
+| `POST` | `/api/refresh` | Refresh JWT token |
+| `GET` | `/api/collaborator/check-key` | Check collaborator key |
+| `POST` | `/api/collaborator/register` | Register as collaborator |
+
+#### Admin (JWT Required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/auth/verify` | Verify auth token |
+| `GET` | `/api/config` | Get configuration |
+| `POST` | `/api/config` | Save configuration |
+| `GET` | `/api/config/export` | Export encrypted config |
+| `POST` | `/api/config/import` | Import encrypted config |
+| `GET` | `/api/status` | System status |
+| `GET` | `/api/admin/info` | Admin info |
+| `POST` | `/api/admin/change-password` | Change admin password |
+| `POST` | `/api/admin/update-email` | Update admin email |
+| `POST` | `/api/admin/restart` | Restart service |
+| `GET` | `/api/share/info` | Share info (sanitized) |
+
+#### Provider Management (Admin + Consumer)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/providers` | List all providers |
+| `GET` | `/api/providers/presets` | Get preset platforms |
+| `POST` | `/api/providers` | Create provider |
+| `GET` | `/api/providers/{id}` | Get provider details |
+| `PUT` | `/api/providers/{id}` | Update provider |
+| `DELETE` | `/api/providers/{id}` | Delete provider |
+| `POST` | `/api/providers/{id}/test` | Test provider connectivity |
+| `POST` | `/api/providers/{id}/test-all-keys` | Test all keys for provider |
+| `GET` | `/api/providers/{id}/models` | Get provider model list |
+| `POST` | `/api/providers/{id}/sync-url` | Sync provider base URL |
+| `POST` | `/api/providers/{id}/sync-models` | Sync provider models |
+| `GET` | `/api/providers/{id}/keys` | List provider API keys |
+| `POST` | `/api/providers/{id}/keys` | Add API key to provider |
+| `PUT` | `/api/providers/{id}/keys/{key_id}` | Update API key |
+| `DELETE` | `/api/providers/{id}/keys/{key_id}` | Delete API key |
+| `POST` | `/api/providers/{id}/keys/{key_id}/reset-quota` | Reset key quota |
+| `GET` | `/api/providers/{id}/access-control` | Get access control |
+| `PUT` | `/api/providers/{id}/access-control` | Update access control |
+| `POST` | `/api/providers/sync-all-urls` | Sync all provider URLs |
+| `GET` | `/api/providers/sider/status` | Sider token status |
+| `POST` | `/api/providers/sider/test` | Test Sider token |
+
+#### Platform Discovery (Admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/discovered-platforms` | List discovered platforms |
+| `POST` | `/api/discovered-platforms/trigger` | Trigger platform discovery scan |
+| `POST` | `/api/discovered-platforms/` | Update discovered platform |
+| `POST` | `/api/discovered-platforms/{id}/check` | Check discovered platform |
+
+#### Usage & Routing (Admin + Consumer)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/usage/summary` | Usage summary |
+| `GET` | `/api/usage/providers` | Usage by provider |
+| `GET` | `/api/usage/records` | Usage records |
+| `DELETE` | `/api/usage/reset` | Reset usage data |
+| `GET` | `/api/routing/mode` | Get routing mode |
+| `POST` | `/api/routing/mode` | Set routing mode |
+| `GET` | `/api/routing/weights` | Get routing weights |
+| `POST` | `/api/routing/weights` | Set routing weights |
+| `GET` | `/api/routing/advice/{model}` | Get routing advice for model |
+
+#### SMTP (Admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/smtp/status` | SMTP status |
+| `GET` | `/api/smtp/config` | Get SMTP config |
+| `POST` | `/api/smtp/config` | Save SMTP config |
+| `POST` | `/api/smtp/test` | Test SMTP |
+
+#### Multi-User (Admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/invite-codes` | List invite codes |
+| `POST` | `/api/invite-codes` | Create invite code |
+| `DELETE` | `/api/invite-codes/{code}` | Delete invite code |
+| `GET` | `/api/consumers` | List consumers |
+| `POST` | `/api/consumers` | Create consumer |
+| `DELETE` | `/api/consumers/{id}` | Delete consumer |
+| `POST` | `/api/consumers/{id}/toggle` | Toggle consumer status |
+| `PUT` | `/api/consumers/{id}` | Update consumer |
+| `POST` | `/api/consumer/register` | Consumer self-registration |
+
+#### Domain & Tunnel (Admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/domain/verify` | Verify domain token |
+| `POST` | `/api/domain/bind` | Bind domain (Cloudflare) |
+| `POST` | `/api/domain/manual-bind` | Manual domain binding |
+| `GET` | `/api/domain/status` | Domain/tunnel status |
+| `POST` | `/api/domain/unbind` | Unbind domain |
+| `POST` | `/api/ip/bind` | Bind IP address |
+| `POST` | `/api/ip/unbind` | Unbind IP address |
+
+#### Federation & Network
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/federation/config` | Get federation config |
+| `POST` | `/api/federation/config` | Save federation config |
+| `GET` | `/api/network/status` | Network status |
+| `GET` | `/api/network/stats` | Network statistics |
+| `POST` | `/api/network/consent` | Network consent |
+| `GET` | `/api/network/disclaimer` | Network disclaimer |
+| `POST` | `/api/network/enable` | Enable network |
+| `POST` | `/api/network/disable` | Disable network |
+| `POST` | `/api/network/toggle` | Toggle network |
+| `PUT` | `/api/network/config` | Update network config |
+| `GET` | `/api/network/peers` | List network peers |
+| `POST` | `/api/network/peers` | Add peer |
+| `DELETE` | `/api/network/peers/{id}` | Remove peer |
+| `GET` | `/api/network/resolve/{id}` | Resolve node address |
+| `GET` | `/api/network/routes` | View routing table |
+| `GET` | `/api/network/join-conditions` | Join conditions |
+| `GET` | `/api/network/quota-allocation` | Quota allocation config |
+| `PUT` | `/api/network/quota-allocation` | Update quota allocation |
+| `GET` | `/api/network/shared-pool-breakdown` | Shared pool breakdown |
+
+#### Guest Keys & Public Keys
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/network/guest-keys` | Issue guest key |
+| `GET` | `/api/network/guest-keys` | List guest keys |
+| `DELETE` | `/api/network/guest-keys/{key}` | Revoke guest key |
+| `DELETE` | `/api/network/guest-keys/{key}/permanent` | Permanently delete guest key |
+| `POST` | `/api/network/guest-keys/{key}/mark-collaborator` | Mark as collaborator |
+| `POST` | `/api/network/guest-keys/{key}/share-type` | Set share type |
+| `POST` | `/api/network/keys/validate` | Validate key |
+| `PUT` | `/api/network/guest-keys/{key}/quota` | Update key quota |
+| `PUT` | `/api/network/guest-keys/{key}` | Update guest key |
+| `GET` | `/api/network/public-key-quota` | Public key quota status |
+| `GET` | `/api/network/open-key-quota` | Open key quota |
+| `GET` | `/api/network/open-key-quota/all` | All open key quotas |
+
+#### Global Pool
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/network/global-pool` | Global pool status |
+| `POST` | `/api/network/global-pool/join` | Join global pool |
+| `POST` | `/api/network/global-pool/contribute` | Contribute to pool |
+| `GET` | `/api/network/global-pool/nodes` | Pool nodes |
+| `GET` | `/api/network/global-pool/stats` | Pool statistics |
+
+#### Algorithm Governance
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/network/algorithm/current` | Current algorithm |
+| `GET` | `/api/network/algorithm/history` | Algorithm history |
+| `POST` | `/api/network/algorithm/propose` | Propose algorithm change |
+| `POST` | `/api/network/algorithm/vote` | Vote on proposal |
+| `POST` | `/api/network/algorithm/gossip` | Algorithm gossip |
+| `GET` | `/api/network/algorithm/proposals` | List proposals |
+| `GET` | `/api/network/algorithm/validate` | Validate algorithm |
+
+#### Load Balancer & Regions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/network/loadbalancer/status` | LB status |
+| `GET` | `/api/network/loadbalancer/nodes` | LB node list |
+| `GET` | `/api/network/loadbalancer/metrics/{node_id}` | Node metrics |
+| `PUT` | `/api/network/loadbalancer/config` | Update LB config |
+| `GET` | `/api/network/heartbeat/ping` | Heartbeat ping |
+| `GET` | `/api/network/regions` | Network regions |
+| `GET` | `/api/network/regions/{region}/nodes` | Nodes in region |
+| `PUT` | `/api/network/regions/config` | Update region config |
+| `GET` | `/api/network/balance/status` | Balance status |
+| `GET` | `/api/network/balance/nodes` | Balance nodes |
+| `GET` | `/api/network/balance/adjustments` | Balance adjustments |
+| `POST` | `/api/network/balance/recalculate` | Recalculate balance |
+
+#### Node Identity
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/node/pubkey` | Get node public key (HTTPS required) |
+| `GET` | `/api/node/info` | Get node info |
+
+#### WAF
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/waf/status` | WAF status |
+| `GET` | `/api/waf/violations` | WAF violations |
+| `GET` | `/api/waf/bans` | Active bans |
+| `POST` | `/api/waf/unban/{key}` | Unban entry |
+
+#### Network Relay
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/network/{id}/` | Relay requests to target node |
+
+#### Real-time & Monitoring
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/events` | SSE real-time event stream |
+| `GET` | `/metrics` | Prometheus metrics |
+| `GET` | `/api/metrics` | Runtime metrics (memory, goroutines, etc.) |
+| `GET` | `/api/logs` | Request logs |
+| `GET` | `/api/health` | Health check status |
 
 ---
 
-## 4. Phase 2: P2P 增强
+## 🏗️ Architecture
 
-**目标**：实现真正的 P2P 网络，节点之间可以直接发现和通信，不再完全依赖中心 Seed 端点。
-
-**预计时间**：8-12 周
-
-### 4.1 多跳路由
-
-- 请求可以经过多个节点中继
-- 路由选择基于延迟、贡献积分、声誉
-- 每跳都有传输路径加密
-
-### 4.2 P2P 能力发现
-
-- DHT（分布式哈希表）用于节点发现
-- Gossip 协议用于能力声明传播
-- 节点可以直接发现其他节点提供的模型能力
-
-### 4.3 能力验证
-
-- 新节点加入时验证其声称的模型能力
-- 探测请求验证（probe request）
-- 虚假能力防御机制
-
-### 4.4 混合穿透
-
-- NAT 穿透（STUN/TURN）
-- 反向隧道（对无法穿透的节点）
-- 局域网发现（mDNS）
-
-### 4.5 里程碑
-
-- [ ] DHT 节点发现
-- [ ] Gossip 协议实现
-- [ ] 多跳路由与中继选择
-- [ ] 传输路径加密增强（每跳加密）
-- [ ] NAT 穿透（STUN/TURN）
-- [ ] 能力验证协议
-- [ ] 虚假能力防御
-- [ ] P2P 能力发现与声明
-
----
-
-## 5. Phase 3: 自治网络
-
-**目标**：实现完全去中心化的自治网络，无需任何中心基础设施。
-
-**预计时间**：12-16 周
-
-### 5.1 声誉系统
-
-- 基于历史表现计算节点声誉
-- 响应时间、可用性、能力真实性
-- 声誉影响路由优先级
-
-### 5.2 公证人去中心化演进
-
-- 从 seed1 单点公证 → 多公证人冗余
-- 公证人选举与轮换机制
-- 减少单点依赖，增强抗审查能力
-
-### 5.3 防共谋增强
-
-- 减少 seed1 单点依赖
-- 贡献验证去中心化
-- 反女巫攻击（助记词身份绑定）
-
-### 5.4 联邦治理
-
-- 治理投票机制
-- 网络参数集体决策
-- 争议解决机制
-
-### 5.5 里程碑
-
-- [ ] 声誉系统实现
-- [ ] 公证人去中心化（多公证人冗余）
-- [ ] 防共谋增强
-- [ ] 贡献验证去中心化
-- [ ] 联邦治理与投票
-- [ ] 完全无中心依赖运行
-- [ ] 网络参数集体决策
-
----
-
-## 6. 各阶段里程碑与交付物
-
-| Phase | 时间 | 交付物 | 验收标准 |
-|-------|------|--------|---------|
-| **Phase 0** | 已完成 | 单节点代理 | 34+ 平台可用，本地额度管理，密钥体系v4 |
-| **Phase 1** | 4-6 周 | 共享版最小闭环 | 双模式切换、助记词、单跳中继、贡献积分 |
-| **Phase 2** | 8-12 周 | P2P 增强 | 多跳路由、DHT、能力验证、NAT穿透 |
-| **Phase 3** | 12-16 周 | 自治网络 | 声誉系统、公证人去中心化、联邦治理 |
-
----
-
-## 7. 版本兼容性策略
-
-### 7.1 向后兼容
-
-- Phase 0 的所有功能在后续版本中保持可用
-- 个人版模式永远不会被强制升级到共享版
-- API 接口保持 OpenAI 兼容
-
-### 7.2 升级路径
+### Personal Mode Architecture
 
 ```
-Phase 0 (v1.x)  →  Phase 1 (v2.x)  →  Phase 2 (v3.x)  →  Phase 3 (v4.x)
-个人版            + 共享版              + P2P               + 自治
-                  可选升级              自动升级             自动升级
+┌─────────────────────────────────────────────────────────┐
+│                     Client Request                       │
+│            (OpenAI SDK / curl / any HTTP)                │
+└───────────────────────┬─────────────────────────────────┘
+                        │ POST /v1/chat/completions
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│              OpenModelPool Agent Gateway                 │
+│                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
+│  │   Auth   │→│  5-Dim   │→│  Failover Fallback    │  │
+│  │ Proxy/   │  │ Routing  │  │  Auto-try next       │  │
+│  │ Consumer │  │ Trust    │  │  available Provider   │  │
+│  │ Guest/PK │  │ Reputa-  │  │                       │  │
+│  │          │  │ tion..   │  └──────────────────────┘  │
+│  └──────────┘  └──────────┘                             │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │              Provider Unified Pool                │   │
+│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐  │   │
+│  │  │OpenAI│ │DeepS.│ │Gemini│ │Qwen  │ │Groq  │  │   │
+│  │  └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘  │   │
+│  │     │        │        │        │        │       │   │
+│  │  ┌──┴──┐ ┌──┴──┐ ┌──┴──┐ ┌──┴──┐ ┌──┴──┐   │   │
+│  │  │VMess│ │VMess│ │SOCKS│ │Direct│ │Direct│   │   │
+│  │  └─────┘ └─────┘ └─────┘ └─────┘ └─────┘   │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                         │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐          │
+│  │ WAF    │ │Tracker │ │Health  │ │Request │          │
+│  │ 4-Layer│ │Usage + │ │Checker │ │Log     │          │
+│  │Protect │ │EWMA +  │ │5min    │ │Ring    │          │
+│  │        │ │Archive │ │Probe   │ │Buffer  │          │
+│  └────────┘ └────────┘ └────────┘ └────────┘          │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 7.3 密钥体系迁移
+### Network Mode Architecture (Opt-In)
 
-- v4.0 废弃 `omsk_*` 系列密钥，迁移至助记词机制
-- Phase 0 用户的 Proxy API Key (`ompk_`) 和 Provider Key 保持不变
-- 加入共享网络时生成新的助记词和 Node ID
+```
+┌──────────────┐         ┌───────────────────────────┐         ┌──────────────┐
+│  Your Node   │         │    P2P Sharing Network     │        │  Other Node  │
+│              │         │                            │         │              │
+│ ┌──────────┐ │  Share  │  ┌──────────────────────┐  │  Share  │ ┌──────────┐ │
+│ │ Gemini   │─┼────────→│  │  Contribution Credit │  │←────────┼─│ GLM      │ │
+│ │ Surplus  │ │         │  │  (Non-transferable,  │  │         │ │ Surplus  │ │
+│ │ Need GLM │←┼────────│  │   Bound to Node ID)   │  │────────→┼─│ Need Gm  │ │
+│ └──────────┘ │  Call   │  └──────────────────────┘  │  Call   │ └──────────┘ │
+│              │         │                            │         │              │
+│ ┌──────────┐ │         │  ┌────────┐ ┌──────────┐  │         │ ┌──────────┐ │
+│ │ Identity │ │         │  │Kademlia│ │  Gossip  │  │         │ │Reputation│ │
+│ │ BIP39 →  │ │←───────→│  │  DHT   │ │ Protocol │  │←───────→│ │ S/A/B/C/D│ │
+│ │ Ed25519  │ │         │  └────────┘ └──────────┘  │         │ └──────────┘ │
+│ └──────────┘ │         │                            │         │              │
+│              │         │  ┌────────┐ ┌──────────┐  │         │              │
+│ ┌──────────┐ │         │  │  WAF   │ │   Load   │  │         │              │
+│ │  Seed    │ │         │  │ 4-Layer│ │ Balancer │  │         │              │
+│ │  :8001   │ │         │  │  Guard │ │ 5-Dim    │  │         │              │
+│ └──────────┘ │         │  └────────┘ └──────────┘  │         │              │
+└──────────────┘         └───────────────────────────┘         └──────────────┘
+```
+
+### Tech Stack
+
+| Component | Technology | Description |
+|-----------|-----------|-------------|
+| HTTP Server | Go stdlib `net/http` | No third-party web framework, Go 1.22+ route patterns |
+| Auth | `golang-jwt/jwt/v5` | JWT token issuance and verification |
+| Password | `golang.org/x/crypto/bcrypt` | Password hashing |
+| Encryption | Go stdlib `crypto/aes` + `crypto/cipher` | AES-256-GCM encryption |
+| Identity | `go-bip39` + `crypto/ed25519` | BIP39 mnemonic → Ed25519 key derivation |
+| DHT | Custom 256-bit Kademlia | SHA-256 hash space, k=20 buckets |
+| Proxy | `golang.org/x/net/proxy` | SOCKS5 outbound proxy |
+| VMess | Xray (external binary) | VMess local proxy |
+| Tunnel | cloudflared | Cloudflare Tunnel (quick/named/manual) |
+| Concurrency | Go goroutine | Concurrent health checks, request forwarding |
+| Streaming | SSE + `io.Writer` | Zero-copy streaming forwarding |
+| Deployment | Single binary / Docker | Zero dependency, cross-platform |
+
+### Project Structure
+
+```
+openmodelpool/
+├── main.go                          # Entry point, HTTP route registration, middleware
+├── init.go                          # Core component initialization
+├── types.go                         # Data models (OpenAI compatible format)
+├── config.go                        # Configuration management (JSON + env + encryption)
+│
+├──── Provider Layer ──────────────────────────────────────────────
+├── provider.go                      # Provider CRUD + smart routing engine
+├── providers.go                     # 36 preset platform definitions
+├── client.go                        # Upstream request forwarding (OpenAI / Sider / Coze)
+├── sider.go                         # Sider web version adapter + Token status monitoring
+├── pricing.go                       # Platform × model dual-dimension pricing table
+├── health.go                        # Provider health check (concurrent probing)
+├── platform_discovery.go            # Auto-discover free AI platforms
+├── model_sync_scheduler.go          # Scheduled model list synchronization
+│
+├──── Auth & User Layer ───────────────────────────────────────────
+├── auth.go                          # JWT auth + bcrypt + SMTP + password recovery
+├── admin.go                         # Admin panel API
+├── multiuser.go                     # Multi-user: invite codes + consumers + API key mgmt
+├── middleware.go                     # HTTP middleware (CORS, auth, rate limiting)
+├── handlers.go                      # Shared HTTP handlers
+├── encryptor.go                     # AES-256-GCM encryptor
+├── cmd_resetpwd.go                  # CLI password reset command
+│
+├──── Tracking & Monitoring ───────────────────────────────────────
+├── tracker.go                       # Usage tracking + EWMA + batch write + archiving + budget alerts
+├── events.go                        # SSE real-time event push
+├── metrics.go                       # Prometheus metrics endpoint
+├── logger.go                        # Structured logging system
+├── performance.go                   # Performance optimization (memory monitor, sync.Pool, worker pool)
+│
+├──── Security Layer ──────────────────────────────────────────────
+├── waf.go                           # WAF 4-layer protection framework
+├── ratelimit.go                     # Token bucket rate limiter (global + per-consumer)
+├── token_estimator.go               # Token precise estimation (upstream + local fallback)
+├── data_integrity.go                # HMAC-SHA256 data file integrity verification
+│
+├──── Network Layer (P2P / Federation) ────────────────────────────
+├── network.go                       # Network mode & data models (Personal/Shared)
+├── network_loadbalancer.go          # 5-dimension health-aware load balancer
+├── network_relay.go                 # Multi-hop relay routing
+├── network_seed.go                  # Seed node discovery service (:8001)
+├── network_discovery.go             # Network peer discovery
+├── network_keys.go                  # Guest Key / Public Global Key management
+├── network_quota.go                 # Quota allocation manager (Guest/Public pool)
+├── network_region.go                # Network region management
+├── network_balance.go               # Load balance tracking & adjustments
+├── network_global_pool.go           # Global resource pool
+├── network_algorithm.go             # Algorithm governance (propose/vote/gossip)
+├── node.go                          # Node identity (BIP39 mnemonic → Ed25519 → Node ID)
+├── dht.go                           # Kademlia DHT (256-bit hash space, k-buckets)
+├── gossip.go                        # Gossip protocol state synchronization
+├── discovery.go                     # Trust pool registry fetching
+├── reputation.go                    # Reputation manager (EWMA, S/A/B/C/D grades)
+├── credits.go                       # Contribution Credit allocation manager
+│
+├──── Infrastructure ──────────────────────────────────────────────
+├── vmess.go                         # VMess proxy management (parse + Xray start/stop)
+├── tunnel.go                        # Cloudflare Tunnel management (quick/named/manual)
+├── server.go                        # HTTP server setup, route registration, graceful shutdown
+│
+├──── Frontend ────────────────────────────────────────────────────
+├── admin.html                       # Web admin panel (dark theme SPA)
+├── login.html                       # Login page
+├── setup.html                       # Initial setup wizard
+├── forgot_password.html             # Forgot password page
+│
+├──── Build & Deploy ──────────────────────────────────────────────
+├── go.mod / go.sum                  # Go module dependencies
+├── Makefile                         # Build shortcuts
+├── Dockerfile                       # Multi-stage Docker build
+├── install.sh                       # One-click install script
+├── deploy.sh                        # Deployment script
+├── build-all.sh                     # Cross-platform build script
+├── restart.sh                       # Restart script
+├── setup-named-tunnel.sh            # Named tunnel setup helper
+│
+├──── Tests ───────────────────────────────────────────────────────
+├── client_test.go                   # Client tests
+├── consumer_security_test.go        # Consumer security tests
+├── dht_test.go                      # DHT tests
+├── encryptor_test.go                # Encryptor tests
+├── federation_test.go               # Federation tests
+├── health_test.go                   # Health check tests
+├── http_pool_bench_test.go          # HTTP pool benchmarks
+├── multiuser_test.go                # Multi-user tests
+├── network_keys_security_test.go    # Network keys security tests
+├── network_keys_test.go             # Network keys tests
+├── network_region_test.go           # Network region tests
+├── network_relay_test.go            # Network relay tests
+├── network_seed_test.go             # Network seed tests
+├── network_test.go                  # Network tests
+├── node_test.go                     # Node identity tests
+├── pricing_test.go                  # Pricing tests
+├── provider_test.go                 # Provider tests
+├── public_key_quota_test.go         # Public key quota tests
+├── quota_enforcement_test.go        # Quota enforcement tests
+├── ratelimit_test.go                # Rate limit tests
+├── security_medium_test.go          # Medium security tests
+├── security_p0_test.go              # P0 security tests
+├── test_helpers_test.go             # Test helpers
+├── token_estimator_test.go          # Token estimator tests
+├── tracker_test.go                  # Tracker tests
+└── waf_test.go                      # WAF tests
+```
 
 ---
 
-## 8. 历史变更记录
+## 📦 Preset Platforms (36)
 
-| 日期 | 版本 | 变更内容 |
-|------|------|---------|
-| 2026-07-04 | v3.0 | 基于架构设计文档创建初始路线图 |
-| 2026-07-06 | v3.0 | 根据最终架构文档更新，拆分阶段，细化里程碑 |
-| 2026-07-11 | **v4.0** | **重大修订**：双模式架构、助记词机制、两级开关、密钥体系收敛（4种Key）、Contribution Credit、叙事更新、路线图从3阶段改为4阶段（Phase 0/1/2/3）、防共谋增强、传输路径加密替代E2EE |
+| # | Platform | Priority | Type | Highlights |
+|---|----------|----------|------|------------|
+| 1 | Coze | 1 | Proprietary API | AI agent platform, `coze-{bot_id}` model format |
+| 2 | LM Studio (Local) | 1 | OpenAI Compatible | Local model hosting, zero latency |
+| 3 | Sider.ai (Web) | 2 | Web Token | Web multi-model aggregation, login Token required |
+| 4 | Anthropic Claude | 2 | Proprietary API | Claude 3.5/4 series, Messages API adapter |
+| 5 | Tencent TokenHub Coding Plan | 3 | OpenAI Compatible | Programming plan, request-count limits, `sk-sp-xxxx` keys |
+| 6 | Tencent TokenHub Token Plan | 3 | OpenAI Compatible | Personal token subscription, `sk-tp-xxxx` keys |
+| 7 | Tencent TokenHub Enterprise | 3 | OpenAI Compatible | Enterprise credits, multi-key quota, team sharing |
+| 8 | Google Gemini | 4 | OpenAI Compatible | Multimodal, ultra-long context, 2.5 Pro/Flash series |
+| 9 | NVIDIA NIM | 4 | OpenAI Compatible | 100+ models free inference, 40 RPM free tier |
+| 10 | Cerebras | 4 | OpenAI Compatible | Extreme inference speed, WSE chip |
+| 11 | OpenAI | 10 | OpenAI Compatible | GPT-4o, o1, o3, o4-mini |
+| 12 | Poe | 15 | OpenAI Compatible | Quora multi-model aggregation |
+| 13 | SID.ai | 15 | OpenAI Compatible | Developer platform |
+| 14 | OpenRouter | 20 | OpenAI Compatible | Global model aggregation |
+| 15 | Ollama (Local) | 50 | OpenAI Compatible | Local model deployment, zero latency |
+| 16 | DeepSeek | 5 | OpenAI Compatible | High-performance domestic LLM, V3/R1 |
+| 17 | Qwen | 5 | OpenAI Compatible | Alibaba Cloud Qwen Turbo/Plus/Max/Long |
+| 18 | Zhipu AI | 5 | OpenAI Compatible | GLM-4 series, including vision models |
+| 19 | Moonshot (Kimi) | 5 | OpenAI Compatible | Long context 8K/32K/128K |
+| 20 | Lingyi Wanwu | 5 | OpenAI Compatible | Yi series |
+| 21 | MiniMax | 5 | OpenAI Compatible | MiniMax large models |
+| 22 | SiliconFlow | 5 | OpenAI Compatible | Open-source model aggregation |
+| 23 | Groq | 5 | OpenAI Compatible | Ultra-fast inference speed |
+| 24 | xAI (Grok) | 5 | OpenAI Compatible | Grok 2/3 series |
+| 25 | Together AI | 5 | OpenAI Compatible | Open-source model inference platform |
+| 26 | Mistral AI | 5 | OpenAI Compatible | Leading European LLM, including Codestral |
+| 27 | Doubao (Volcano Engine) | 5 | OpenAI Compatible | ByteDance Doubao |
+| 28 | iFlytek Spark | 5 | OpenAI Compatible | iFlytek Spark |
+| 29 | Baidu Qianfan | 5 | OpenAI Compatible | ERNIE series |
+| 30 | Stepfun | 5 | OpenAI Compatible | Step series models |
+| 31 | Baichuan | 5 | OpenAI Compatible | Baichuan series |
+| 32 | Novita AI | 5 | OpenAI Compatible | Aggregation platform |
+| 33 | Fireworks AI | 5 | OpenAI Compatible | High-speed inference platform |
+| 34 | Cohere | 5 | OpenAI Compatible | Enterprise NLP, Command R+ |
+| 35 | Agnes AI | 5 | OpenAI Compatible | Text/Image/Video multi-modal |
+| 36 | AIHubMix | 5 | OpenAI Compatible | Multi-provider aggregation |
+
+---
+
+## 🔧 Non-OpenAI-Compatible Platform Configuration Guide
+
+The following 3 platforms use proprietary APIs and require special configuration. All non-standard API Keys/Tokens are configured in the **Provider edit interface**.
+
+### 🎯 Coze
+
+**API Type:** Proprietary Chat API (`/v3/chat` + polling)
+**API Key Format:** Personal Access Token (PAT), format `pat_xxxxxxxxxxxx`
+
+**How to get:**
+1. Login to [Coze Open Platform](https://www.coze.cn)
+2. Top-right avatar → **API Token** → **Create Token**
+3. Name and copy the token (shown only once at creation)
+
+**Configuration:** Fill in the PAT token in the Provider edit interface **API Key** field
+**Calling:** Model name format `coze-{bot_id}`
+```bash
+curl -d '{"model": "coze-7xxxxxxxxxx0", "messages": [...]}'
+```
+
+### 🌐 Sider.ai (Web)
+
+**API Type:** Web private API (`/api/v3/completion/text`)
+**API Key Format:** Browser extension Session Token
+
+**How to get:**
+1. Install [Sider.ai Chrome Extension](https://sider.ai/) and login
+2. F12 → **Application** → **Cookies** → `sider.ai` → copy `token` field value
+
+**Note:** Token expires periodically, needs regular updates; built-in health check auto-detects expiration
+
+### 🟠 Anthropic Claude
+
+**API Type:** Messages API (`/v1/messages`)
+**API Key Format:** `sk-ant-xxxxx` (x-api-key header auth)
+
+**How to get:**
+1. Login to [Anthropic Console](https://console.anthropic.com/)
+2. **API Keys** → **Create Key** → Copy
+
+**Auto-adaptation:** System messages extracted independently, proprietary auth headers, SSE event auto-conversion
+
+---
+
+## 🔨 Build & Deployment
+
+### Cross-Compilation
+
+| Platform | Arch | Binary | Target Devices |
+|----------|------|--------|----------------|
+| Linux | amd64 | `openmodelpool-linux-amd64` | x86_64 servers, VPS |
+| Linux | arm64 | `openmodelpool-linux-arm64` | Raspberry Pi 4, ARM servers |
+| Linux | armv7 | `openmodelpool-linux-armv7` | Raspberry Pi 3B, OpenWRT |
+| macOS | amd64 | `openmodelpool-darwin-amd64` | Intel Mac |
+| macOS | arm64 | `openmodelpool-darwin-arm64` | Apple Silicon Mac |
+| Windows | amd64 | `openmodelpool-windows-amd64.exe` | x64 Windows |
+
+### Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build for current platform |
+| `make build-all` | Build for all 6 platforms |
+| `make build-linux` | Build Linux only (3 architectures) |
+| `make build-darwin` | Build macOS only (2 architectures) |
+| `make build-windows` | Build Windows only |
+| `make clean` | Clean build artifacts |
+| `make test` | Run tests + coverage |
+| `make docker` | Build Docker image |
+| `make docker-compose` | Docker Compose start |
+| `make release` | Full release workflow |
+
+### Build Optimization
+
+All builds use:
+
+```bash
+go build -ldflags="-s -w" -trimpath
+```
+
+- `-s -w`: Strip debug info and symbol tables, reduce binary size
+- `-trimpath`: Strip local path info, improve portability and security
+
+### Install Script Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--port` | Service port | `8000` |
+| `--dir` | Install directory | `/usr/local/bin` |
+| `--data` | Data directory | `/var/lib/openmodelpool` |
+| `--version` | Specify version | `latest` |
+
+---
+
+## ⚙️ Configuration
+
+### Data Storage
+
+All data stored in `data/` directory, JSON format:
+
+| File | Content |
+|------|---------|
+| `data/config.json` | Global config (routing mode, weights, Proxy API Key, etc.) |
+| `data/providers.json` | Provider config (API Keys encrypted) |
+| `data/admin.json` | Admin account, JWT Secret, SMTP config |
+| `data/usage.json` | Usage records |
+| `data/consumers.json` | Multi-user data (invite codes, consumers) |
+| `data/.key` | AES-256 encryption key (auto-generated) |
+| `data/sider_token_status.json` | Sider Token status |
+| `data/guest_keys.json` | Guest Key store |
+| `data/discovered_platforms.json` | Auto-discovered platforms |
+
+### Sensitive Data Encryption
+
+All sensitive fields encrypted with **AES-256-GCM**:
+
+- Provider API Keys
+- Proxy API Keys
+- Guest Proxy Keys
+- SMTP passwords
+- VMess proxy links
+
+Key file `data/.key` is auto-generated on first startup (32-byte random key, Base64 encoded).
+
+> ⚠️ **Keep `data/.key` safe** — lost means unable to decrypt stored sensitive data.
+
+### Config Export / Import
+
+```bash
+# Export (via admin panel API)
+curl http://localhost:8000/api/config/export \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -o backup.json
+
+# Import
+curl http://localhost:8000/api/config/import \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "file=@backup.json"
+```
+
+### Routing Mode Configuration
+
+```bash
+# Set routing mode
+curl -X POST http://localhost:8000/api/routing/mode \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "auto"}'
+
+# Custom 5-dimension weights
+curl -X POST http://localhost:8000/api/routing/weights \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"trust": 0.25, "reputation": 0.25, "latency": 0.20, "availability": 0.15, "contribution": 0.15}'
+```
+
+---
+
+## 📜 License
+
+MIT
+
+---
+
+## 🙏 Acknowledgments
+
+OpenModelPool Agent is built upon these excellent open-source projects:
+
+- [**Go**](https://go.dev/) — Clean and efficient programming language
+- [**golang-jwt/jwt**](https://github.com/golang-jwt/jwt) — Reliable JWT implementation
+- [**golang.org/x/crypto**](https://pkg.go.dev/golang.org/x/crypto) — Secure bcrypt password hashing
+- [**golang.org/x/net**](https://pkg.go.dev/golang.org/x/net) — SOCKS5 proxy support
+- [**go-bip39**](https://github.com/tyler-smith/go-bip39) — BIP39 mnemonic implementation
+
+Inspired by these open-source API management projects:
+
+- [**one-api**](https://github.com/songquanpeng/one-api) — OpenAI management tool
+- [**new-api**](https://github.com/Calcium-Ion/new-api) — Enhanced one-api with multi-user support
+
+**Spiritual predecessors** — these projects proved the power of decentralized sharing:
+
+- [**BitTorrent**](https://www.bittorrent.com/) — P2P file sharing pioneer
+- [**IPFS**](https://ipfs.tech/) — Content-addressed, decentralized storage
+- [**Tor**](https://www.torproject.org/) — Onion routing, communication freedom
+
+---
+
+## 📋 Changelog
+
+### v4.0.1 (2026-07)
+
+**🔴 Architecture Upgrade**
+- **Dual-Mode Architecture** — Personal Mode (default, pure local) + Network Mode (opt-in P2P sharing)
+- **BIP39 Mnemonic Identity** — Mnemonic → Ed25519 key pair → Node ID (`mmx-` prefix), replacing legacy key system
+- **5-Dimension Routing** — Upgraded from 4-dimension to 5-dimension: Trust 25% + Reputation 25% + Latency 20% + Availability 15% + Contribution 15%
+- **Two-Level Switch** — `network_enabled` (join network) + `share_to_pool` (share quota) fully independent
+
+**🟠 Network System (New)**
+- **P2P Node Discovery** — Triple-layer: Peer Seed (:8001) + Kademlia DHT (256-bit) + Gossip protocol
+- **Reputation System** — EWMA-tracked scoring, S/A/B/C/D five-grade system
+- **Contribution Credit** — Non-withdrawable, non-transferable credits bound to Node ID
+- **Guest Key / Public Global Key** — `gk-` and `pk-` key types for guest and public access
+- **WAF 4-Layer Protection** — Rate limit → Token limit → Content safety → Behavioral analysis
+- **Token Precise Estimation** — Dual-strategy: upstream extraction (preferred) + local estimation (fallback)
+- **Auto Platform Discovery** — Automatic scanning and discovery of free AI platforms
+- **Health-Aware Load Balancer** — Real-time per-node metrics with sliding-window history
+- **Data Integrity Verification** — HMAC-SHA256 signatures on critical data files
+- **Global Resource Pool** — Cross-node resource aggregation and contribution
+- **Algorithm Governance** — Decentralized algorithm proposal, voting, and gossip
+
+**🟢 Platform Updates**
+- Platform count increased from 34 → **36** (added Agnes AI, AIHubMix)
+- TokenHub Enterprise expanded with GLM-5.2, MiniMax M3, Kimi K2.6 models
+- Multi-key management per Provider with individual quota control
+
+**🔵 Seed Endpoints**
+- `GET /api/peers` — Peer discovery (no auth)
+- `POST /api/register` — Node self-registration (no auth)
+- `GET /api/seed/health` — Seed health check (no auth)
+
+### v3.3.0 (2026-07)
+
+**🔴 Critical Security Fixes**
+- **API Key masking** — `/api/share/info` and `/api/config/export` no longer expose Proxy API Key in plaintext
+- **Consumer Key encryption** — Consumer API Keys encrypted with AES-256-GCM at rest
+
+**🟠 Security Hardening**
+- **CORS tightening** — Removed wildcard `*`, default allows only localhost + tunnel URL
+- **File permissions** — All data files from 0644 to 0600
+- **Error masking** — Proxy error messages no longer leak internal IP addresses
+- **JWT security** — admin.html removed localStorage token, switched to HttpOnly Cookie
+- **Cookie enhancement** — Secure + SameSite=Lax flags
+- **Endpoint auth** — `/metrics` and `/events` endpoints now require authentication (401)
+- **Federation auth** — Federation endpoints restricted to known nodes/admin
+
+**🟢 Other Improvements**
+- **Password strength** — Minimum length from 6 to 8
+- **Reset Token** — Reuse unexpired tokens, prevent concurrent race
+- **Anonymous fallback** — Disabled when consumers are registered
+- **Consumer permissions** — handleTestProvider adds Consumer permission check
+
+**⚡ Performance**
+- **Config write debounce** — 3-second aggregate writes, reduce disk I/O
+- **HTTP connection pool** — Global MaxIdleConns=100, TCP connection reuse
+- **Async writes** — Config.save() made async, non-blocking
+- **Tracker optimization** — Record() releases lock before flushing to disk
+
+### v3.2.0 (2026-07)
+
+**🔴 Security & Performance**
+- **Rate Limiting** — Token bucket algorithm, global QPS + per-Consumer independent limits, 429 on excess
+- **CORS whitelist** — Exact match + `*.example.com` wildcard subdomain support
+- **Sensitive field encryption unified** — `coze_api_token` added to AES-256-GCM scope
+- **JSON parse error handling** — All API endpoints return 400 + clear error messages on parse failure
+
+**🟡 Feature Enhancements**
+- **Provider model list auto-sync** — `SyncModels()` + `/api/providers/{id}/sync-models` endpoint + panel sync button
+- **Federation Phase 3 Gossip-DHT hybrid discovery** — DHT hash ring routing table
+- **Structured logging** — `log_level` config, request log middleware, output to `data/access.log` + stdout
+- **SSE real-time push** — `/events` endpoint, Provider status changes, health updates, config changes
+- **Prometheus metrics** — `/metrics` endpoint, request counts, latency, error rates, Token usage
+- **Frontend modularization** — admin.html JS split into 10+ module comment areas
+- **Config hot reload** — `SIGHUP` signal triggers config reload without process restart
