@@ -156,7 +156,7 @@ select.form-input{appearance:none;cursor:pointer}
 .nq-cell:last-child{border-right:none}
 .nq-cell .nq-header{font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:5px}
 .nq-cell .nq-header .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.nq-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px}
+.nq-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px;line-height:1.4}
 .nq-cell .nq-value.yellow-text{color:#fbbf24}
 .nq-cell .nq-value.blue-text{color:#60a5fa}
 .nq-cell .nq-value.purple-text{color:#c084fc}
@@ -166,7 +166,12 @@ select.form-input{appearance:none;cursor:pointer}
 .nq-bar-fill.blue{background:#3b82f6}
 .nq-bar-fill.purple{background:#a855f7}
 .nq-bar-fill.green{background:#22c55e}
-.ns-traffic-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px}
+.nq-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;margin-top:2px;max-width:180px;margin-left:auto;margin-right:auto}
+.nq-row .nq-value{font-size:12px!important;margin-bottom:0!important;font-weight:600;line-height:1.4!important}
+.nq-row .nq-label{font-size:12px!important;line-height:1.4!important;font-weight:600}
+.v5-quota-cell .nq-row{max-width:120px}
+.nq-label{font-weight:600;font-size:12px;line-height:1.4;min-width:14px}
+.ns-traffic-cell .nq-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px;line-height:1.4}
 .ns-traffic-cell .nq-value.blue-text{color:#60a5fa}
 .ns-traffic-cell .nq-value.purple-text{color:#c084fc}
 .ns-traffic-cell .nq-value.green-text{color:#22c55e}
@@ -883,7 +888,7 @@ select.form-input{appearance:none;cursor:pointer}
               <table style="width:100%;border-collapse:collapse;font-size:12px">
                 <thead><tr style="background:rgba(108,99,255,.03)">
                   <th style="padding:3px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每日</th>
-                  <th style="padding:3px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每月</th>
+                  <th style="padding:3px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每月Token</th>
                   <th style="padding:3px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">总额</th>
                 </tr></thead>
                 <tbody><tr>
@@ -925,34 +930,34 @@ select.form-input{appearance:none;cursor:pointer}
         </div>
         <div id="pRateLimitFields" style="display:none;opacity:0;transition:opacity .2s">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="form-group" style="margin-bottom:8px"><label class="form-label" style="font-size:12px">每分钟请求数 (RPM)</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
-            <div class="form-group" style="margin-bottom:8px"><label class="form-label" style="font-size:12px">每日总请求数</label><input class="form-input" id="pDailyRequestLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
+            <div class="form-group" style="margin-bottom:8px"><label class="form-label" >每分钟请求数 (RPM)</label><input class="form-input" id="pRateLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
+            <div class="form-group" style="margin-bottom:8px"><label class="form-label" >每日总请求数</label><input class="form-input" id="pDailyRequestLimit" type="number" value="0" min="0" placeholder="0=不限" style="height:36px;font-size:13px"></div>
           </div>
           <div style="font-size:10px;color:var(--text-muted)">开启后对该平台的所有请求执行频率限制</div>
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">📊 额度上限控制</label>
-        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">每日请求数：限制每天API调用次数（到期重置）；每月上限/总额上限：限制token消耗量。0=不限制</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">每日Token：限制每天的token消耗量（到期重置）；每月Token/总额上限：限制token消耗量。0=不限制</div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:rgba(108,99,255,.04)">
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500;width:80px">池类型</th>
-              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每日请求数</th>
-              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每月上限</th>
+              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每日Token</th>
+              <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">每月Token</th>
               <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border-color);color:var(--text-muted);font-weight:500">总额上限</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td style="padding:6px 8px;border-bottom:1px solid rgba(0,0,0,.04)"><span class="dot dot-blue" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>私有池</td>
-              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivRequestsDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivTokensDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><input class="form-input" id="pPrivQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
             </tr>
             <tr>
               <td style="padding:6px 8px"><span class="dot dot-purple" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle"></span>共享池</td>
-              <td style="padding:4px 6px"><input class="form-input" id="pSharedRequestsDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
+              <td style="padding:4px 6px"><input class="form-input" id="pSharedTokensDaily" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaMonthly" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
               <td style="padding:4px 6px"><input class="form-input" id="pSharedQuotaTotal" type="number" value="0" min="0" placeholder="不限" style="width:100%;font-size:12px;height:28px;text-align:center"></td>
             </tr>
@@ -1702,10 +1707,10 @@ function editProvider(pid) {
   if (rlFields) { rlFields.style.display = rlEnabled ? 'block' : 'none'; rlFields.style.opacity = rlEnabled ? '1' : '0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = p.rate_limit_per_min || 0;
   if (document.getElementById('pDailyRequestLimit')) document.getElementById('pDailyRequestLimit').value = p.daily_request_limit || 0;
-  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = p.private_requests_daily || 0;
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = p.private_tokens_daily || 0;
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = p.private_quota_monthly || 0;
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = p.private_quota_total || 0;
-  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = p.shared_requests_daily || 0;
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = p.shared_tokens_daily || 0;
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = p.shared_quota_monthly || 0;
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = p.shared_quota_total || 0;
   // Load access control state and pool ratio
@@ -1761,10 +1766,10 @@ function selectPreset(pid) {
   const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
   const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
-  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
-  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = '0';
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
 }
@@ -1823,10 +1828,10 @@ async function saveProvider() {
     data.rate_limit_per_min = 0;
     data.daily_request_limit = 0;
   }
-  data.private_requests_daily = parseInt(document.getElementById('pPrivRequestsDaily')?.value) || 0;
+  data.private_tokens_daily = parseInt(document.getElementById('pPrivTokensDaily')?.value) || 0;
   data.private_quota_monthly = parseInt(document.getElementById('pPrivQuotaMonthly')?.value) || 0;
   data.private_quota_total = parseInt(document.getElementById('pPrivQuotaTotal')?.value) || 0;
-  data.shared_requests_daily = parseInt(document.getElementById('pSharedRequestsDaily')?.value) || 0;
+  data.shared_tokens_daily = parseInt(document.getElementById('pSharedTokensDaily')?.value) || 0;
   data.shared_quota_monthly = parseInt(document.getElementById('pSharedQuotaMonthly')?.value) || 0;
   data.shared_quota_total = parseInt(document.getElementById('pSharedQuotaTotal')?.value) || 0;
   const key = document.getElementById('pKey').value.trim();
@@ -1902,10 +1907,10 @@ function selectCustomPreset() {
   const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
   const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
-  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
-  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = '0';
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
   editingId = '';
@@ -1939,10 +1944,10 @@ function selectDiscoveredPreset(id) {
   const rlT = document.getElementById('pRateLimitToggle'); if (rlT) rlT.classList.remove('active');
   const rlF = document.getElementById('pRateLimitFields'); if (rlF) { rlF.style.display='none'; rlF.style.opacity='0'; }
   if (document.getElementById('pRateLimit')) document.getElementById('pRateLimit').value = '0';
-  if (document.getElementById('pPrivRequestsDaily')) document.getElementById('pPrivRequestsDaily').value = '0';
+  if (document.getElementById('pPrivTokensDaily')) document.getElementById('pPrivTokensDaily').value = '0';
   if (document.getElementById('pPrivQuotaMonthly')) document.getElementById('pPrivQuotaMonthly').value = '0';
   if (document.getElementById('pPrivQuotaTotal')) document.getElementById('pPrivQuotaTotal').value = '0';
-  if (document.getElementById('pSharedRequestsDaily')) document.getElementById('pSharedRequestsDaily').value = '0';
+  if (document.getElementById('pSharedTokensDaily')) document.getElementById('pSharedTokensDaily').value = '0';
   if (document.getElementById('pSharedQuotaMonthly')) document.getElementById('pSharedQuotaMonthly').value = '0';
   if (document.getElementById('pSharedQuotaTotal')) document.getElementById('pSharedQuotaTotal').value = '0';
 }
@@ -2313,8 +2318,14 @@ async function refreshHealth() {
     statsHtml += '<div class="ntc-stat"><div class="ntc-num blue-text">' + fmtTok(privToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
     statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_private || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
     statsHtml += '</div>';
-    statsHtml += '<div class="nq-value blue-text">' + formatQuota(privUsed, privTotal) + '</div>';
-    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill blue" style="width:' + barPercent(privUsed, privTotal) + '%"></div></div>';
+    var privDaily = ns.quota_private_daily || 0;
+    var privMonthly = ns.quota_private_monthly || 0;
+    var privDailyUsed = ns.quota_private_daily_used || 0;
+    var privMonthlyUsed = ns.quota_private_monthly_used || 0;
+    statsHtml += '<div class="nq-row"><span class="nq-label blue-text">日</span><span class="nq-value blue-text" >' + formatQuota(privDailyUsed, privDaily) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill blue" style="width:' + barPercent(privDailyUsed, privDaily) + '%"></div></div>';
+    statsHtml += '<div class="nq-row"><span class="nq-label blue-text">月</span><span class="nq-value blue-text" >' + formatQuota(privMonthlyUsed, privMonthly) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill blue" style="width:' + barPercent(privMonthlyUsed, privMonthly) + '%"></div></div>';
     statsHtml += '</div>';
 
     // Public pool (with percentage)
@@ -2331,8 +2342,14 @@ async function refreshHealth() {
     statsHtml += '<div class="ntc-stat"><div class="ntc-num purple-text">' + fmtTok(pubToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
     statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_public || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
     statsHtml += '</div>';
-    statsHtml += '<div class="nq-value purple-text">' + formatQuota(pubUsed, pubTotal) + '</div>';
-    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill purple" style="width:' + barPercent(pubUsed, pubTotal) + '%"></div></div>';
+    var pubDaily = ns.quota_public_daily || 0;
+    var pubMonthly = ns.quota_public_monthly || 0;
+    var pubDailyUsed = ns.quota_public_daily_used || 0;
+    var pubMonthlyUsed = ns.quota_public_monthly_used || 0;
+    statsHtml += '<div class="nq-row"><span class="nq-label purple-text">日</span><span class="nq-value purple-text" >' + formatQuota(pubDailyUsed, pubDaily) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill purple" style="width:' + barPercent(pubDailyUsed, pubDaily) + '%"></div></div>';
+    statsHtml += '<div class="nq-row"><span class="nq-label purple-text">月</span><span class="nq-value purple-text" >' + formatQuota(pubMonthlyUsed, pubMonthly) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill purple" style="width:' + barPercent(pubMonthlyUsed, pubMonthly) + '%"></div></div>';
     statsHtml += '</div>';
 
     // Guest pool (with percentage)
@@ -2347,8 +2364,14 @@ async function refreshHealth() {
     statsHtml += '<div class="ntc-stat"><div class="ntc-num green-text">' + fmtTok(gToks) + '</div><div class="ntc-sublabel">今日 Token</div></div>';
     statsHtml += '<div class="ntc-stat"><div class="ntc-num" style="color:#fff">' + (ns.conns_guest || 0) + '</div><div class="ntc-sublabel">连接数</div></div>';
     statsHtml += '</div>';
-    statsHtml += '<div class="nq-value green-text">' + formatQuota(gUsed, gTotal) + '</div>';
-    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill green" style="width:' + barPercent(gUsed, gTotal) + '%"></div></div>';
+    var gDaily = ns.quota_guest_daily || 0;
+    var gMonthly = ns.quota_guest_monthly || 0;
+    var gDailyUsed = ns.quota_guest_daily_used || 0;
+    var gMonthlyUsed = ns.quota_guest_monthly_used || 0;
+    statsHtml += '<div class="nq-row"><span class="nq-label green-text">日</span><span class="nq-value green-text" >' + formatQuota(gDailyUsed, gDaily) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill green" style="width:' + barPercent(gDailyUsed, gDaily) + '%"></div></div>';
+    statsHtml += '<div class="nq-row"><span class="nq-label green-text">月</span><span class="nq-value green-text" >' + formatQuota(gMonthlyUsed, gMonthly) + '</span></div>';
+    statsHtml += '<div class="nq-bar-wrap"><div class="nq-bar-fill green" style="width:' + barPercent(gMonthlyUsed, gMonthly) + '%"></div></div>';
     statsHtml += '</div>';
 
     statsHtml += '</div>';
@@ -2456,8 +2479,12 @@ let row3 = '<div class="v5-quota-bar">';
       row3 += '<div class="qt-stat"><div class="qt-num blue-text">' + (ppTok > 0 || ppTotal > 0 ? fmtTok(ppTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
       row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
       row3 += '</div>';
-      row3 += '<div class="qc-quota blue-text">' + formatQuota(ppUsed, ppTotal) + '</div>';
-      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill blue" style="width:' + barPercent(ppUsed, ppTotal) + '%"></div></div>';
+      var ppDaily = p.quota_private_daily || 0, ppMonthly = p.quota_private_monthly || 0;
+      var ppDailyUsed = p.quota_private_daily_used || 0, ppMonthlyUsed = p.quota_private_monthly_used || 0;
+      row3 += '<div class="nq-row"><span class="nq-label blue-text">日</span><span class="nq-value blue-text" >' + formatQuota(ppDailyUsed, ppDaily) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill blue" style="width:' + barPercent(ppDailyUsed, ppDaily) + '%"></div></div>';
+      row3 += '<div class="nq-row"><span class="nq-label blue-text">月</span><span class="nq-value blue-text" >' + formatQuota(ppMonthlyUsed, ppMonthly) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill blue" style="width:' + barPercent(ppMonthlyUsed, ppMonthly) + '%"></div></div>';
       row3 += '</div>';
 
       // Public pool cell (purple)
@@ -2470,8 +2497,12 @@ let row3 = '<div class="v5-quota-bar">';
       row3 += '<div class="qt-stat"><div class="qt-num purple-text">' + (upTok > 0 || upTotal > 0 ? fmtTok(upTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
       row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
       row3 += '</div>';
-      row3 += '<div class="qc-quota purple-text">' + formatQuota(upUsed, upTotal) + '</div>';
-      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill purple" style="width:' + barPercent(upUsed, upTotal) + '%"></div></div>';
+      var upDaily = p.quota_public_daily || 0, upMonthly = p.quota_public_monthly || 0;
+      var upDailyUsed = p.quota_public_daily_used || 0, upMonthlyUsed = p.quota_public_monthly_used || 0;
+      row3 += '<div class="nq-row"><span class="nq-label purple-text">日</span><span class="nq-value purple-text" >' + formatQuota(upDailyUsed, upDaily) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill purple" style="width:' + barPercent(upDailyUsed, upDaily) + '%"></div></div>';
+      row3 += '<div class="nq-row"><span class="nq-label purple-text">月</span><span class="nq-value purple-text" >' + formatQuota(upMonthlyUsed, upMonthly) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill purple" style="width:' + barPercent(upMonthlyUsed, upMonthly) + '%"></div></div>';
       row3 += '</div>';
 
       // Guest pool cell (green)
@@ -2484,8 +2515,12 @@ let row3 = '<div class="v5-quota-bar">';
       row3 += '<div class="qt-stat"><div class="qt-num green-text">' + (gpTok > 0 || gpTotal > 0 ? fmtTok(gpTok) : '—') + '</div><div class="qt-sublabel">今日 Token</div></div>';
       row3 += '<div class="qt-stat"><div class="qt-num" style="color:#fff">' + (p.active_conns || 0) + '</div><div class="qt-sublabel">连接数</div></div>';
       row3 += '</div>';
-      row3 += '<div class="qc-quota green-text">' + formatQuota(gpUsed, gpTotal) + '</div>';
-      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill green" style="width:' + barPercent(gpUsed, gpTotal) + '%"></div></div>';
+      var gpDaily = p.quota_guest_daily || 0, gpMonthly = p.quota_guest_monthly || 0;
+      var gpDailyUsed = p.quota_guest_daily_used || 0, gpMonthlyUsed = p.quota_guest_monthly_used || 0;
+      row3 += '<div class="nq-row"><span class="nq-label green-text">日</span><span class="nq-value green-text" >' + formatQuota(gpDailyUsed, gpDaily) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill green" style="width:' + barPercent(gpDailyUsed, gpDaily) + '%"></div></div>';
+      row3 += '<div class="nq-row"><span class="nq-label green-text">月</span><span class="nq-value green-text" >' + formatQuota(gpMonthlyUsed, gpMonthly) + '</span></div>';
+      row3 += '<div class="qc-bar-wrap"><div class="qc-bar-fill green" style="width:' + barPercent(gpMonthlyUsed, gpMonthly) + '%"></div></div>';
       row3 += '</div>';
 
       row3 += '</div>';
@@ -2550,7 +2585,7 @@ async function loadApiKeys(pid) {
     if (!keys.length) {
       container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:8px">未配置多 Key，点击下方按钮添加</div>';
     } else {
-      let html = '<table class="usage-table" style="font-size:12px"><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>可用</th><th>操作</th><th>测试</th></tr></thead><tbody>';
+      let html = '<table class="usage-table" ><thead><tr><th>别名/Key</th><th>额度</th><th>权限</th><th>优先级</th><th>状态</th><th>可用</th><th>操作</th><th>测试</th></tr></thead><tbody>';
       for (const k of keys) {
         var qParts = [];
         if (k.quota_daily > 0) qParts.push('日:' + k.quota_daily.toLocaleString());
@@ -2917,7 +2952,7 @@ function buildKeyEditForm(pid, keyId, k) {
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
   h += '<thead><tr style="background:rgba(108,99,255,.03)">';
   h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每日</th>';
-  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每月</th>';
+  h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">每月Token</th>';
   h += '<th style="padding:4px 6px;text-align:center;font-weight:500;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border-color)">总额</th>';
   h += '</tr></thead><tbody><tr>';
   h += '<td style="padding:3px"><input id="ekf-quota-daily" type="number" value="' + (k.quota_daily||0) + '" min="0" placeholder="不限" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-primary);outline:none;box-sizing:border-box;text-align:center"></td>';
@@ -4631,7 +4666,8 @@ async function addAllDiscoveredAsPreset() {
 </div>
 
 
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" async></script>
+<script>
 function toggleRateLimit() {
   const toggle = document.getElementById('pRateLimitToggle');
   const fields = document.getElementById('pRateLimitFields');
