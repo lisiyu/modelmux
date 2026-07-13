@@ -133,6 +133,8 @@ type APIKeyConfig struct {
 	Used          int64  `json:"used"`            // used quota (total)
 	UsedDaily     int64  `json:"used_daily"`      // used today
 	UsedMonthly   int64  `json:"used_monthly"`    // used this month
+	LastDailyReset   string `json:"last_daily_reset,omitempty"`   // date of last daily reset (YYYY-MM-DD)
+	LastMonthlyReset string `json:"last_monthly_reset,omitempty"` // month of last monthly reset (YYYY-MM)
 	AccessControl string `json:"access_control"`  // "private" | "shared" | "public"
 	Enabled       bool   `json:"enabled"`         // whether this key is enabled
 	Priority      int    `json:"priority"`        // priority for rotation (higher = preferred)
@@ -154,10 +156,10 @@ type Provider struct {
 	RateLimitEnabled  bool  `json:"rate_limit_enabled,omitempty"`    // master toggle for rate limiting
 	DailyRequestLimit int64 `json:"daily_request_limit,omitempty"` // max requests per day, 0=unlimited
 	RateLimitPerMin     int   `json:"rate_limit_per_min,omitempty"`     // requests per minute, 0=unlimited
-	PrivateRequestsDaily int64 `json:"private_requests_daily,omitempty"` // private pool max requests per day, 0=unlimited
+	PrivateTokensDaily   int64 `json:"private_tokens_daily,omitempty"`   // private pool max tokens per day, 0=unlimited
 	PrivateQuotaMonthly int64 `json:"private_quota_monthly,omitempty"`  // private key quota limit per month, 0=unlimited
 	PrivateQuotaTotal   int64 `json:"private_quota_total,omitempty"`    // private key total quota cap, 0=unlimited
-	SharedRequestsDaily  int64 `json:"shared_requests_daily,omitempty"`  // shared pool max requests per day, 0=unlimited
+	SharedTokensDaily    int64 `json:"shared_tokens_daily,omitempty"`    // shared pool max tokens per day, 0=unlimited
 	SharedQuotaMonthly  int64 `json:"shared_quota_monthly,omitempty"`   // shared key quota limit per month, 0=unlimited
 	SharedQuotaTotal    int64 `json:"shared_quota_total,omitempty"`     // shared key total quota cap, 0=unlimited
 	Description string     `json:"description,omitempty"`

@@ -152,11 +152,10 @@ func (h *HealthChecker) checkProvider(p Provider) {
 			latencyMS = float64(time.Since(reqStart).Milliseconds())
 			if resp.StatusCode == 200 {
 				healthy = true
-				failReason = ""
-				break
+			} else {
+				failReason = ke.alias + ": HTTP " + strconv.Itoa(resp.StatusCode)
+				keysFailed++
 			}
-			failReason = ke.alias + ": HTTP " + strconv.Itoa(resp.StatusCode)
-			keysFailed++
 		}
 
 	default:
@@ -238,11 +237,10 @@ func (h *HealthChecker) checkProvider(p Provider) {
 				}
 			}
 			
-			if keyOK {
-				break
+			if !keyOK {
+				failReason = ke.alias + ": all models failed"
+				keysFailed++
 			}
-			failReason = ke.alias + ": all models failed"
-			keysFailed++
 		}
 	}
 
@@ -280,6 +278,7 @@ func (h *HealthChecker) checkProvider(p Provider) {
 		hs.FailureReason = failReason
 		slog.Warn("provider health check failed", "provider", p.ID, "reason", failReason, "consecutive_fails", hs.ConsecutiveFails)
 	}
+	hs.FailedKeyCount = keysFailed
 }
 
 // GetHealth returns a snapshot of all provider health statuses.

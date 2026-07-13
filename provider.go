@@ -1157,9 +1157,30 @@ func (m *ProviderManager) RecordKeyUsage(providerID, keyID string, tokens int64)
 	if !ok {
 		return
 	}
+
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	monthStr := now.Format("2006-01")
+
 	for i := range p.APIKeys {
 		if p.APIKeys[i].ID == keyID {
-			p.APIKeys[i].Used += tokens
+			k := &p.APIKeys[i]
+			k.Used += tokens
+
+			// Reset daily counter if day changed
+			if k.LastDailyReset != todayStr {
+				k.UsedDaily = 0
+				k.LastDailyReset = todayStr
+			}
+			k.UsedDaily += tokens
+
+			// Reset monthly counter if month changed
+			if k.LastMonthlyReset != monthStr {
+				k.UsedMonthly = 0
+				k.LastMonthlyReset = monthStr
+			}
+			k.UsedMonthly += tokens
+
 			m.providers[providerID] = p
 			m.saveLocked()
 			return
