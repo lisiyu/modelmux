@@ -2184,13 +2184,15 @@ async function refreshHealth() {
     statsHtml += '<div class="v7-merged-row" style="gap:8px;margin-bottom:10px">';
     statsHtml += '<div class="v7-stats-group">';
     statsHtml += '<span class="v7-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型:</span>';
-    if (nsPrivModels > 0) statsHtml += '<span class="v7-stat-pill">私有 <b class="blue">' + nsPrivModels + '</b></span>';
-    if (nsSharedModels > 0) statsHtml += '<span class="v7-stat-pill">共享 <b class="purple">' + nsSharedModels + '</b></span>';
     statsHtml += '<span class="v7-stat-pill">启用 <b class="green">' + nsEnabledModels + '</b></span>';
+    if (nsPrivModels > 0) statsHtml += '<span class="v7-stat-pill">🔒<b class="blue">' + nsPrivModels + '</b></span>';
+    if (nsSharedModels > 0) statsHtml += '<span class="v7-stat-pill">🌐<b class="purple">' + nsSharedModels + '</b></span>';
     statsHtml += '<span class="v7-stat-pill">总计 <b class="yellow">' + nsTotalModels + '</b></span>';
+    var nsFailedKeys = ns.failed_key_count || 0;
     statsHtml += '<span class="v7-stat-pill">Provider keys <b>' + nsTotalKeys + '</b>';
-    if (nsPrivKeys > 0) statsHtml += ' <span style="background:#3b82f6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">私有' + nsPrivKeys + '</span>';
-    if (nsSharedKeys > 0) statsHtml += ' <span style="background:#8b5cf6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">共享' + nsSharedKeys + '</span>';
+    if (nsFailedKeys > 0) statsHtml += ' <span style="background:#ef4444;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">失效' + nsFailedKeys + '</span>';
+    if (nsPrivKeys > 0) statsHtml += ' <span style="background:#3b82f6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">🔒' + nsPrivKeys + '</span>';
+    if (nsSharedKeys > 0) statsHtml += ' <span style="background:#8b5cf6;padding:1px 6px;border-radius:4px;color:#fff;font-size:10px">🌐' + nsSharedKeys + '</span>';
     statsHtml += '</span>';
     if (nsAvgLatency != null) statsHtml += '<span class="v7-stat-pill">平均延迟 <b class="purple">' + nsAvgLatency.toFixed(0) + 'ms</b></span>';
     if (nsSuccessRate != null) statsHtml += '<span class="v7-stat-pill">成功率 <b class="green">' + nsSuccessRate.toFixed(1) + '%</b></span>';
@@ -2224,14 +2226,7 @@ async function refreshHealth() {
     var pubToks = ns.today_tokens_public || 0;
     var pubUsed = ns.quota_public_used || 0;
     var pubTotal = ns.quota_public_total || 0;
-    var guestPct = 50; // default
-    // Get guest pool percent from providers
-    for (var gi = 0; gi < providers.length; gi++) {
-      if (providers[gi].access_control && providers[gi].access_control.guest_pool_percent != null) {
-        guestPct = providers[gi].access_control.guest_pool_percent;
-        break;
-      }
-    }
+    var guestPct = ns.guest_pool_percent != null ? ns.guest_pool_percent : 50;
     var publicPct = 100 - guestPct;
     statsHtml += '<div class="ns-traffic-cell">';
     statsHtml += '<div class="ntc-header"><span class="dot dot-purple"></span>公共池 (' + publicPct + '%)</div>';
@@ -2311,8 +2306,10 @@ async function refreshHealth() {
 
       let inlineStats = '';
       inlineStats += '<div class="v8-keys-pill">Provider keys <b>' + (p.key_count || 0) + '</b>';
-      if (privateCount > 0) inlineStats += '<span class="v8-ksub private">私有 ' + privateCount + '</span>';
-      if (sharedCount > 0) inlineStats += '<span class="v8-ksub shared">共享 ' + sharedCount + '</span>';
+      if (privateCount > 0) inlineStats += '<span class="v8-ksub private">🔒' + privateCount + '</span>';
+      if (sharedCount > 0) inlineStats += '<span class="v8-ksub shared">🌐' + sharedCount + '</span>';
+      var failedKeys = p.failed_key_count || 0;
+      if (failedKeys > 0) inlineStats += '<span class="v8-ksub" style="background:#ef4444;color:#fff">⚠' + failedKeys + '</span>';
       inlineStats += '</div>';
       inlineStats += '<span class="v7-stat-pill">延迟 <b class="' + latencyColor + '">' + latency + '</b></span>';
       inlineStats += '<span class="v7-stat-pill">成功率 <b class="' + srColor + '">' + successRate + '</b></span>';
@@ -2403,9 +2400,9 @@ let row3 = '<div class="v5-quota-bar">';
       var row2stats = '<div class="v7-merged-row" style="margin-top:8px;flex-wrap:wrap;gap:0">';
       row2stats += '<div class="v7-stats-group" style="flex-wrap:wrap">';
       row2stats += '<span class="v7-stat-pill" style="background:transparent;border-color:transparent;color:#94a3b8;font-weight:600">模型:</span>';
-      if (privModels > 0) row2stats += '<span class="v8-ms-pill private">🔒私有<span class="v8-ms-val">' + privModels + '</span></span>';
-      if (sharedModels > 0) row2stats += '<span class="v8-ms-pill shared">🌐共享<span class="v8-ms-val">' + sharedModels + '</span></span>';
       row2stats += '<span class="v8-ms-pill enabled" onclick="event.stopPropagation();openModelMatrix(\x27' + pid + '\x27)" title="点击打开模型配置矩阵">启用<span class="v8-ms-val">' + enabledModels + '</span></span>';
+      if (privModels > 0) row2stats += '<span class="v8-ms-pill private">🔒<span class="v8-ms-val">' + privModels + '</span></span>';
+      if (sharedModels > 0) row2stats += '<span class="v8-ms-pill shared">🌐<span class="v8-ms-val">' + sharedModels + '</span></span>';
       row2stats += '<span class="v8-ms-pill total">总计<span class="v8-ms-val">' + (p.total_model_count || p.model_count || 0) + '</span></span>';
       row2stats += '</div>';
       row2stats += '<div class="v7-separator"></div>';
