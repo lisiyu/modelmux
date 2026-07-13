@@ -1062,6 +1062,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		KeyCount         int     `json:"key_count"`
 		PrivateKeyCount  int     `json:"private_key_count"`
 		SharedKeyCount   int     `json:"shared_key_count"`
+		FailedKeyCount   int     `json:"failed_key_count"`
 		Enabled          bool    `json:"enabled"`
 		Priority         int     `json:"priority"`
 		IsShared         bool    `json:"is_shared"`
@@ -1196,9 +1197,21 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		// Access control (pass through for frontend guest_pool_percent etc.)
 		ac := p.AccessControl
 
-		// Aggregate per-key quota by access type (private / shared)
+		// Aggregate per-key quota by access type (private / shared → split into public + guest)
 		var quotaPrivUsed, quotaPrivTotal int64
 		var quotaPubUsed, quotaPubTotal int64
+		var quotaGuestUsed, quotaGuestTotal int64
+
+		// Guest pool percent for this provider (0-100, default 50)
+		guestPct := p.AccessControl.GuestPoolPercent
+		if guestPct <= 0 {
+			guestPct = 50
+		}
+		if guestPct > 100 {
+			guestPct = 100
+		}
+		publicPct := 100 - guestPct
+
 		for _, k := range p.APIKeys {
 			if !k.Enabled {
 				continue
@@ -1210,10 +1223,14 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 				}
 				quotaPrivUsed += k.Used
 			case "shared":
+				// Split shared key quota between public pool and guest pool
 				if k.Quota > 0 {
-					quotaPubTotal += k.Quota
+					quotaPubTotal += k.Quota * int64(publicPct) / 100
+					quotaGuestTotal += k.Quota * int64(guestPct) / 100
 				}
-				quotaPubUsed += k.Used
+				// Split used proportionally as well
+				quotaPubUsed += k.Used * int64(publicPct) / 100
+				quotaGuestUsed += k.Used * int64(guestPct) / 100
 			}
 		}
 		// Legacy single key (no APIKeys) counts as private
@@ -1243,6 +1260,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			KeyCount:         keyCount,
 			PrivateKeyCount:  privateKeyCount,
 			SharedKeyCount:   sharedKeyCount,
+			FailedKeyCount:   func() int { if hasHealth { return h.FailedKeyCount }; return 0 }(),
 			Enabled:          p.Enabled,
 			Priority:         p.Priority,
 			IsShared:         isShared,
@@ -1254,11 +1272,13 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 			QuotaPrivateTotal:   quotaPrivTotal,
 			QuotaPublicUsed:     quotaPubUsed,
 			QuotaPublicTotal:    quotaPubTotal,
+			QuotaGuestUsed:      quotaGuestUsed,
+			QuotaGuestTotal:     quotaGuestTotal,
 		})
 	}
 
 	// Aggregate node_stats from enriched providers
-	var totalProviders, onlineProviders, totalKeys, privateKeyCount, sharedKeyCount int
+	var totalProviders, onlineProviders, totalKeys, privateKeyCount, sharedKeyCount, failedKeys int
 	var totalModels, enabledModels, privateModels, sharedModels int
 	var totalLatency float64
 	var latencyCount, successCount int
@@ -1276,6 +1296,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		totalKeys += ep.KeyCount
 		privateKeyCount += ep.PrivateKeyCount
 		sharedKeyCount += ep.SharedKeyCount
+		failedKeys += ep.FailedKeyCount
 		totalModels += ep.TotalModelCount
 		enabledModels += ep.ModelCount
 		privateModels += ep.PrivateModelCount
@@ -1324,12 +1345,41 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	connsGuest = 0 // placeholder: no per-guest connection tracking yet
 
+	// Compute weighted average guest_pool_percent (weighted by shared key quota)
+	var totalSharedQuota int64
+	var weightedGuestPct int64
+	for _, ep := range enriched {
+		// Find the provider to get its access_control
+		for _, p2 := range configured {
+			if p2.ID == ep.ProviderID {
+				gp := p2.AccessControl.GuestPoolPercent
+				if gp <= 0 { gp = 50 }
+				if gp > 100 { gp = 100 }
+				// Weight by this provider's shared quota total
+				var pSharedQuota int64
+				for _, k := range p2.APIKeys {
+					if k.Enabled && k.AccessControl == "shared" && k.Quota > 0 {
+						pSharedQuota += k.Quota
+					}
+				}
+				totalSharedQuota += pSharedQuota
+				weightedGuestPct += int64(gp) * pSharedQuota
+				break
+			}
+		}
+	}
+	avgGuestPct := 50 // default
+	if totalSharedQuota > 0 {
+		avgGuestPct = int(weightedGuestPct / totalSharedQuota)
+	}
+
 	nodeStats := map[string]any{
 		"provider_total":    totalProviders,
 		"provider_online":   onlineProviders,
 		"key_total":         totalKeys,
 		"private_key_count": privateKeyCount,
 		"shared_key_count":  sharedKeyCount,
+		"failed_key_count":  failedKeys,
 		"model_total":       totalModels,
 		"model_enabled":     enabledModels,
 		"private_models":    privateModels,
@@ -1348,6 +1398,7 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		"quota_public_total":  quotaPubTotal,
 		"quota_guest_used":    quotaGuestUsed,
 		"quota_guest_total":   quotaGuestTotal,
+		"guest_pool_percent": avgGuestPct,
 		"conns_private": connsPrivate,
 		"conns_public":  connsPublic,
 		"conns_guest":   connsGuest,

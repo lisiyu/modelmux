@@ -172,6 +172,11 @@ type ProviderAccessControl struct {
 	// Set to false to opt out of the shared pool (admin/proxy keys are unaffected).
 	ShareToPool bool `json:"share_to_pool"`
 
+	// GuestPoolPercent defines what percentage of shared key quota is allocated
+	// to the Guest pool (0-100). The remainder goes to the Public pool.
+	// Default: 50.
+	GuestPoolPercent int `json:"guest_pool_percent,omitempty"`
+
 	// MigrationAllowPublic is a legacy field for backward compatibility.
 	// It is read from old JSON data with "allow_public" and migrated to ShareToPool.
 	MigrationAllowPublic *bool `json:"allow_public,omitempty"`
@@ -344,6 +349,7 @@ type ProviderHealth struct {
 	LastSuccess      string  `json:"last_success"`
 	LastFailure      string  `json:"last_failure"`
 	FailureReason    string  `json:"failure_reason,omitempty"`
+	FailedKeyCount   int     `json:"failed_key_count"` // number of keys that failed health check
 }
 
 // ============================================================
