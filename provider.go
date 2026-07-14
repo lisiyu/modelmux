@@ -458,6 +458,13 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 		return cands // admin keys always have unrestricted access
 	}
 
+	// Public key only works when node is in shared mode
+	if keyType == "public" {
+		if netMgr == nil || !netMgr.IsSharedMode() {
+			return nil // personal mode: public key has no access
+		}
+	}
+
 	// v3.1: Proxy API Key behavior depends on share_to_pool
 	if keyType == "proxy" {
 		if netMgr != nil && netMgr.IsSharingToPool() {
@@ -823,7 +830,10 @@ func providerAllowsKeyType(p Provider, keyType string) bool {
 	case "guest":
 		return ac.AllowGuest && hasNonPrivateKey(p)
 	case "public":
-		// Public key: accessible if provider is shared to the pool AND has at least one non-private key
+		// Public key only works in shared mode, and provider must be shared with non-private keys
+		if netMgr == nil || !netMgr.IsSharedMode() {
+			return false
+		}
 		return ac.ShareToPool && hasNonPrivateKey(p)
 	default:
 		return false // unknown → deny (fail-closed)
