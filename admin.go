@@ -1614,6 +1614,8 @@ func handleHealthStatus(w http.ResponseWriter, r *http.Request) {
 		"conns_private": connsPrivate,
 		"conns_public":  connsPublic,
 		"conns_guest":   connsGuest,
+		"node_id":       cfg.Get("node_name", ""),
+		"version":       AppVersion,
 	}
 
 	writeJSON(w, 200, map[string]any{"providers": enriched, "node_stats": nodeStats})
