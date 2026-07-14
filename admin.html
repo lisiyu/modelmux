@@ -2249,12 +2249,8 @@ async function refreshHealth() {
     const providers = d.providers || [];
     const ns = d.node_stats || {};
 
-    // V8: Fetch node info for header
-    var v8NodeInfo = {};
-    try {
-      var niResp = await authFetch('/api/node/info');
-      v8NodeInfo = await niResp.json();
-    } catch(e) { console.warn('nodeInfo fetch failed', e); }
+    // V8: Get node info from node_stats (already in /api/health response)
+    var v8NodeInfo = { node_id: ns.node_id || '', version: ns.version || '' };
 
     // ============ Render Node Stats Overview ============
     const statsContainer = document.getElementById('nodeStatsContainer');
@@ -3310,20 +3306,39 @@ function copyText(text) {
 // ===== Start (only if authenticated) =====
 if (authToken) {
   init().then(() => { 
-    console.log('[CHAIN] Starting post-init chain');
-    try { initApiUrls(); console.log('[CHAIN] initApiUrls OK'); } catch(e) { console.error('[CHAIN] initApiUrls FAILED:', e); }
-    try { loadProxyApiKey(); console.log('[CHAIN] loadProxyApiKey started'); } catch(e) { console.error('[CHAIN] loadProxyApiKey FAILED:', e); }
-    try { loadSmtp(); console.log('[CHAIN] loadSmtp started'); } catch(e) { console.error('[CHAIN] loadSmtp FAILED:', e); }
-    try { loadAdminInfo(); console.log('[CHAIN] loadAdminInfo started'); } catch(e) { console.error('[CHAIN] loadAdminInfo FAILED:', e); }
-    try { refreshUsage(); console.log('[CHAIN] refreshUsage started'); } catch(e) { console.error('[CHAIN] refreshUsage FAILED:', e); }
-    try { loadWeights(); console.log('[CHAIN] loadWeights started'); } catch(e) { console.error('[CHAIN] loadWeights FAILED:', e); }
-    try { refreshSiderStatus(); console.log('[CHAIN] refreshSiderStatus started'); } catch(e) { console.error('[CHAIN] refreshSiderStatus FAILED:', e); }
-    try { refreshLogs(); console.log('[CHAIN] refreshLogs started'); } catch(e) { console.error('[CHAIN] refreshLogs FAILED:', e); }
-    try { refreshHealth(); console.log('[CHAIN] refreshHealth started'); } catch(e) { console.error('[CHAIN] refreshHealth FAILED:', e); }
-    try { loadFederationConfig(); } catch(e) { console.error('[CHAIN] loadFederationConfig FAILED:', e); }
-    try { loadShareInfo(); } catch(e) { console.error('[CHAIN] loadShareInfo FAILED:', e); }
-    try { loadGuestKeys(); } catch(e) { console.error('[CHAIN] loadGuestKeys FAILED:', e); }
-    console.log('[CHAIN] All functions called');
+    console.log('[CHAIN] Starting post-init chain (optimized)');
+    // P0: Critical — render provider cards & node stats immediately
+    try { refreshHealth(); } catch(e) { console.error('[CHAIN] refreshHealth FAILED:', e); }
+    // P1: Secondary — usage & weights (visible below the fold, defer 300ms)
+    setTimeout(() => {
+      try { refreshUsage(); } catch(e) {}
+      try { loadWeights(); } catch(e) {}
+    }, 300);
+    // P2: Lazy — settings panels (defer 1.5s, skip network-related if personal mode)
+    setTimeout(() => {
+      try { initApiUrls(); } catch(e) {}
+      try { loadProxyApiKey(); } catch(e) {}
+      try { loadSmtp(); } catch(e) {}
+      try { loadAdminInfo(); } catch(e) {}
+      try { refreshSiderStatus(); } catch(e) {}
+      try { refreshLogs(); } catch(e) {}
+    }, 1500);
+    // P3: Check network mode, load shared-network features only if enabled
+    setTimeout(async () => {
+      try {
+        const nr = await authFetch('/api/network/status');
+        const nd = await nr.json();
+        window._networkMode = nd.mode || 'personal';
+        if (window._networkMode === 'shared') {
+          try { loadFederationConfig(); } catch(e) {}
+          try { loadShareInfo(); } catch(e) {}
+          try { loadGuestKeys(); } catch(e) {}
+        } else {
+          console.log('[CHAIN] Personal mode: skipping federation/share/guestKeys');
+        }
+      } catch(e) { console.warn('network mode check failed', e); }
+    }, 2000);
+    console.log('[CHAIN] All functions scheduled');
 });
   // Auto-refresh status and usage every 30 seconds with error handling
   let _pollTimer = setInterval(async () => {
@@ -3626,6 +3641,12 @@ if (authToken) {
         if (d.node_id) msg += ' NodeID: ' + d.node_id;
         toast(msg, 'success');
         await loadNetworkStatus();
+        // Load shared-network features now that network is enabled
+        window._networkMode = 'shared';
+        try { loadFederationConfig(); } catch(e) {}
+        try { loadShareInfo(); } catch(e) {}
+        try { loadGuestKeys(); } catch(e) {}
+        if (typeof startNetworkPolling === 'function') startNetworkPolling();
       } catch(e) {
         toast('加入失败: ' + e.message, 'error');
       }
@@ -3638,6 +3659,8 @@ if (authToken) {
         const r = await authFetch('/api/network/disable', {method:'POST'});
         if (!r.ok) { toast('退出失败', 'error'); return; }
         toast('已退出共享网络，回到个人模式', 'success');
+        window._networkMode = 'personal';
+        if (typeof stopNetworkPolling === 'function') stopNetworkPolling();
         await loadNetworkStatus();
       } catch(e) {
         toast('退出失败: ' + e.message, 'error');
@@ -4240,14 +4263,27 @@ if (authToken) {
       }
     }
     // Load network status on page load
-    setTimeout(() => loadNetworkStatus(), 300);
-    // Refresh every 30 seconds with error handling
-    let _netPollTimer = setInterval(async () => {
-      try { await loadNetworkStatus(); } catch(e) {
-        console.error('网络状态刷新失败:', e);
-        clearInterval(_netPollTimer); _netPollTimer = null;
+    // Initial load: just check mode once
+    setTimeout(async () => {
+      await loadNetworkStatus();
+      // Only start polling if in shared mode
+      if (window._networkMode === 'shared' || (networkStatus && (networkStatus.mode === 'shared' || networkStatus.network_enabled))) {
+        startNetworkPolling();
       }
-    }, 30000);
+    }, 300);
+    let _netPollTimer = null;
+    function startNetworkPolling() {
+      if (_netPollTimer) return;
+      _netPollTimer = setInterval(async () => {
+        try { await loadNetworkStatus(); } catch(e) {
+          console.error('网络状态刷新失败:', e);
+          clearInterval(_netPollTimer); _netPollTimer = null;
+        }
+      }, 30000);
+    }
+    function stopNetworkPolling() {
+      if (_netPollTimer) { clearInterval(_netPollTimer); _netPollTimer = null; }
+    }
     // ============================================================
     // ============================================================
     
@@ -4280,6 +4316,8 @@ NodeID: ${nodeId}
         updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', false);
         document.getElementById('quotaAllocation').style.display = 'none';
         document.getElementById('networkActivePanel').style.display = 'none';
+        window._networkMode = 'personal';
+        if (typeof stopNetworkPolling === 'function') stopNetworkPolling();
         loadNetworkStatus();
       } else {
         toast('退出失败', 'error');
