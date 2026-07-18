@@ -492,6 +492,52 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 	case "screenshot":
 		// Just refresh screenshot
 
+	case "scroll":
+		// Scroll page up or down
+		direction := req.Value
+		if direction == "" {
+			direction = "down"
+		}
+		scrollScript := "window.scrollBy(0, 400)"
+		if direction == "up" {
+			scrollScript = "window.scrollBy(0, -400)"
+		}
+		if err := chromedp.Run(sess.ctx, chromedp.Evaluate(scrollScript, nil)); err != nil {
+			errMsg = "滚动失败: " + err.Error()
+		}
+		time.Sleep(500 * time.Millisecond)
+
+	case "clickAt":
+		// Click at specific x,y coordinates on the page
+		// Value format: "x,y"
+		parts := strings.Split(req.Value, ",")
+		if len(parts) != 2 {
+			writeError(w, 400, "坐标格式错误，需要 x,y")
+			return
+		}
+		var x, y float64
+		fmt.Sscanf(parts[0], "%f", &x)
+		fmt.Sscanf(parts[1], "%f", &y)
+		// Use JavaScript to dispatch a real click at coordinates
+		clickJS := fmt.Sprintf(`(function(){
+			var el = document.elementFromPoint(%f, %f);
+			if(el){
+				var rect = el.getBoundingClientRect();
+				var evt = new MouseEvent('click', {
+					bubbles: true, cancelable: true,
+					clientX: %f, clientY: %f
+				});
+				el.dispatchEvent(evt);
+				return true;
+			}
+			return false;
+		})()`, x, y, x, y)
+		var clicked bool
+		if err := chromedp.Run(sess.ctx, chromedp.Evaluate(clickJS, &clicked)); err != nil {
+			errMsg = "点击失败: " + err.Error()
+		}
+		time.Sleep(1 * time.Second)
+
 	default:
 		writeError(w, 400, "未知操作: "+req.Action)
 		return
