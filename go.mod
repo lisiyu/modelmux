@@ -3,7 +3,7 @@ module github.com/lisiyu/openmodelpool
 go 1.26
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	golang.org/x/crypto v0.31.0
 )
 
