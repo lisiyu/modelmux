@@ -1,9 +1,13 @@
-run:/n  timeout: 5m
+run:
+  timeout: 5m
 
-linters:/n  disable-all: true
-  enable:/n    - ineffassign
+linters:
+  disable-all: true
+  enable:
+    - ineffassign
     - unconvert
     - misspell
 
-issues:/n  max-issues-per-linter: 0
+issues:
+  max-issues-per-linter: 0
   max-same-issues: 0
