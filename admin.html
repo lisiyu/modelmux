@@ -466,7 +466,7 @@ select.form-input{appearance:none;cursor:pointer}
         <span style="font-size:10px;padding:2px 6px;background:rgba(52,199,89,.12);color:var(--accent-green);border-radius:4px">零门槛</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-        <input class="form-input" value="sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1" readonly style="flex:1;font-family:monospace;font-size:13px;background:var(--bg-secondary);cursor:pointer" onclick="copyText(this.value)">
+        <input class="form-input" value="sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1" readonly style="flex:1;font-family:monospace;font-size:11px;background:var(--bg-secondary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="copyText(this.value)" title="点击复制完整Key">
         <button class="btn btn-secondary btn-sm" onclick="copyText('sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1')">📋</button>
       </div>
       <div style="font-size:11px;color:var(--text-muted)">无需搭建节点即可使用，访问全网共享的公共模型算力资源（有基础额度上限）</div>
