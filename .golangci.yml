@@ -1,11 +1,3 @@
-# golangci-lint configuration.
-# Conservative starter config: catches real issues (dead assignments, unused
-# conversions, typos). Formatting linters (gofmt/goimports) are intentionally
-# DISABLED for now because the existing codebase is not gofmt `-s`-clean and we
-# cannot run gofmt in this environment. To re-enable after a one-time cleanup,
-# run locally:  gofmt -s -w . && goimports -w .
-# Then add `gofmt` and `goimports` back under `linters.enable`.
-# Stricter linters (errcheck, staticcheck, gosec, ...) can be enabled later.
 run:/n  timeout: 5m
 
 linters:/n  disable-all: true
