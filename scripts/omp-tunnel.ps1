@@ -112,7 +112,7 @@ function Setup-Cloudflare {
     $listOutput = & $cfExe tunnel list 2>&1 | Out-String
     $tunnelId = ""
     
-    if ($listOutput -match "openmodelpool\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})") {
+    if ($listOutput -match "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\s+openmodelpool") {
         $tunnelId = $Matches[1]
         Write-Host "  已有 openmodelpool 隧道，复用: $tunnelId" -ForegroundColor $G
     } else {
