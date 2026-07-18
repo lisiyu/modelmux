@@ -8,7 +8,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg-primary:#0f0f23;--bg-secondary:#1a1a2e;--bg-card:#16213e;--bg-input:#1a1a3e;--border-color:#2a2a4a;--border-focus:#6c63ff;--text-primary:#e8e8f0;--text-secondary:#a0a0b8;--text-muted:#6a6a8a;--accent-start:#6c63ff;--accent-end:#b24bf3;--success:#22c55e;--error:#ef4444;--warning:#f59e0b;--info:#3b82f6;--radius:12px;--shadow:0 4px 24px rgba(0,0,0,.3)}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.container{max-width:960px;margin:0 auto;padding:16px 14px 60px}
+.container{max-width:100%;margin:0 auto;padding:16px 20px 60px}
 .header{text-align:center;padding:32px 0 28px;position:relative}
 .header::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:120px;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end));border-radius:2px}
 .logo{font-size:28px;font-weight:700;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
@@ -345,20 +345,16 @@ select.form-input{appearance:none;cursor:pointer}
   .logo-sub{font-size:12px}
 }
 
-.browser-layout{display:flex;gap:16px}
-.browser-screenshot-area{flex:1;min-width:0}
-.browser-control-panel{width:260px;flex-shrink:0}
+.browser-layout{display:block}
+.browser-screenshot-area{width:100%}
 .screenshot-wrapper{position:relative;overflow:hidden;border-radius:8px}
-@media(max-width:768px){
-  .browser-layout{flex-direction:column}
-  .browser-control-panel{width:100%}
-}
+
 
 @keyframes ripple{0%{transform:translate(-50%,-50%) scale(.5);opacity:1}100%{transform:translate(-50%,-50%) scale(2);opacity:0}}
 </style>
 </head>
 <body>
-<div class="container" style="max-width:960px">
+<div class="container">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
     <h2 style="margin:0;font-size:20px;font-weight:700">🌐 内置浏览器登录</h2>
     <a href="/admin" style="color:var(--text-secondary);font-size:13px;text-decoration:none" onclick="if(window.parent&&window.parent.closeSubPage){window.parent.closeSubPage();return false;}">← 返回管理面板</a>
@@ -378,39 +374,24 @@ select.form-input{appearance:none;cursor:pointer}
     <!-- 截图区 -->
     <div class="browser-screenshot-area">
       <div class="screenshot-wrapper" id="screenshotWrapper">
-        <img id="browserScreenshot" style="width:100%;border:1px solid var(--border-color);border-radius:8px;min-height:200px;background:#f5f5f5;cursor:crosshair;display:block;user-select:none;-webkit-user-select:none;touch-action:none" alt="浏览器截图" />
+        <img id="browserScreenshot" style="width:100%;border:1px solid var(--border-color);border-radius:8px;min-height:400px;background:#f5f5f5;cursor:crosshair;display:block;user-select:none;-webkit-user-select:none;touch-action:none" alt="浏览器截图" />
         <div id="clickRipple" style="position:absolute;width:20px;height:20px;border-radius:50%;border:2px solid #6c63ff;background:rgba(108,99,255,.3);pointer-events:none;display:none;transform:translate(-50%,-50%);animation:ripple .4s ease-out"></div>
       </div>
-      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);cursor:pointer">
-          <input type="checkbox" id="liveMode" onchange="toggleLiveMode()" style="cursor:pointer" /> 实时模式
-        </label>
-        <button class="btn btn-sm" onclick="browserAction('scroll','up')" style="white-space:nowrap">⬆</button>
-        <button class="btn btn-sm" onclick="browserAction('scroll','down')" style="white-space:nowrap">⬇</button>
-        <button class="btn btn-sm" onclick="browserAction('screenshot')" style="white-space:nowrap">🔄</button>
-        <span id="browserCurrentURL" style="font-size:11px;color:var(--text-secondary);flex:1;min-width:100px;word-break:break-all"></span>
-      </div>
-    </div>
-
-    <!-- 操作面板 -->
-    <div class="browser-control-panel">
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;color:var(--text-primary)">手动操作</label>
-        <input type="text" id="browserSelector" class="form-input" placeholder="CSS选择器 或 文字内容" style="margin-bottom:6px;font-size:12px" />
-        <input type="text" id="browserValue" class="form-input" placeholder="输入内容（如需）" style="margin-bottom:6px;font-size:12px" />
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-          <button class="btn btn-sm" onclick="browserAction('click')">点击元素</button>
-          <button class="btn btn-sm" onclick="browserAction('clickText')">点击文字</button>
-          <button class="btn btn-sm" onclick="browserAction('input')">输入文字</button>
-          <button class="btn btn-sm" onclick="browserAction('wait')">等待3秒</button>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+        <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:0">
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);cursor:pointer;flex-shrink:0">
+            <input type="checkbox" id="liveMode" onchange="toggleLiveMode()" style="cursor:pointer" /> 实时模式
+          </label>
+          <span id="browserCurrentURL" style="font-size:11px;color:var(--text-muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-sm" onclick="browserLoginFinish()" style="background:#34c759;color:#fff;font-weight:600;padding:8px 18px">✓ 保存Cookie</button>
+          <a href="/admin" class="btn btn-sm" style="display:inline-flex;align-items:center;text-decoration:none;padding:8px 14px" onclick="if(window.parent&&window.parent.closeSubPage){window.parent.closeSubPage();return false;}">取消</a>
         </div>
       </div>
-      <button class="btn btn-sm" onclick="browserLoginFinish()" style="width:100%;background:#34c759;color:#fff;font-weight:600;margin-bottom:8px;padding:10px">✓ 完成并保存 Cookie</button>
-      <a href="/admin" class="btn btn-sm" style="width:100%;display:block;text-align:center;text-decoration:none" onclick="if(window.parent&&window.parent.closeSubPage){window.parent.closeSubPage();return false;}">取消</a>
-      <div style="margin-top:10px;padding:8px;border-radius:8px;background:rgba(255,149,0,.08);font-size:11px;color:var(--text-secondary);line-height:1.5">
-        💡 点击截图可直接操作页面，或使用滚动按钮浏览。完成登录后点击「保存Cookie」。
-      </div>
     </div>
+    <input type="hidden" id="browserSelector" value="" />
+    <input type="hidden" id="browserValue" value="" />
   </div>
 </div>
 
