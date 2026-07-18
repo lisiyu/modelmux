@@ -557,6 +557,79 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 		}
 		// No error message for mouse events - they should be silent
 
+
+	case "keyboard":
+		// Keyboard event via CDP: type=text for printable chars, type=special for special keys
+		// Value format: "text,<char>" or "special,<keyname>"
+		parts := strings.SplitN(req.Value, ",", 2)
+		if len(parts) < 2 {
+			writeError(w, 400, "键盘事件格式错误")
+			return
+		}
+		kbType := parts[0]
+		kbValue := parts[1]
+
+		switch kbType {
+		case "text":
+			// Insert printable character using InsertText
+			_ = chromedp.Run(sess.ctx,
+				input.InsertText(kbValue),
+			)
+		case "special":
+			// Handle special keys via DispatchKeyEvent
+			var keyCode int64
+			var code string
+			switch kbValue {
+			case "Enter":
+				keyCode = 13
+				code = "Enter"
+			case "Backspace":
+				keyCode = 8
+				code = "Backspace"
+			case "Tab":
+				keyCode = 9
+				code = "Tab"
+			case "Escape":
+				keyCode = 27
+				code = "Escape"
+			case "ArrowUp":
+				keyCode = 38
+				code = "ArrowUp"
+			case "ArrowDown":
+				keyCode = 40
+				code = "ArrowDown"
+			case "ArrowLeft":
+				keyCode = 37
+				code = "ArrowLeft"
+			case "ArrowRight":
+				keyCode = 39
+				code = "ArrowRight"
+			case "Space":
+				keyCode = 32
+				code = "Space"
+				kbValue = " "
+			default:
+				keyCode = 0
+				code = kbValue
+			}
+			if keyCode == 32 {
+				// Space - use char type
+				_ = chromedp.Run(sess.ctx,
+					input.DispatchKeyEvent(input.KeyChar).WithText(" "),
+				)
+			} else {
+				_ = chromedp.Run(sess.ctx,
+					input.DispatchKeyEvent(input.KeyDown).
+						WithKey(kbValue).WithCode(code).
+						WithWindowsVirtualKeyCode(keyCode),
+					input.DispatchKeyEvent(input.KeyUp).
+						WithKey(kbValue).WithCode(code).
+						WithWindowsVirtualKeyCode(keyCode),
+				)
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+
 	default:
 		writeError(w, 400, "未知操作: "+req.Action)
 		return
