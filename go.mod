@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.54.0
 )
 
 require (
@@ -23,6 +23,6 @@ require (
 )
 
 require (
-	golang.org/x/net v0.33.0
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.57.0
+	golang.org/x/text v0.40.0 // indirect
 )
