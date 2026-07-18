@@ -880,8 +880,26 @@ select.form-input{appearance:none;cursor:pointer}
       </div>
 
       <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="pUrl" placeholder="https://api.deepseek.com/v1"></div>
-      <div class="form-group"><label class="form-label">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..."></div>
+      <div class="form-group"><label class="form-label" id="pKeyLabel">API Key *</label><input class="form-input" id="pKey" placeholder="sk-..."></div>
       <div id="webSessionFields" style="display:none">
+        <div id="webLoginGuide" style="margin-bottom:16px;padding:16px;background:linear-gradient(135deg,rgba(108,99,255,.06),rgba(108,99,255,.02));border:1px solid rgba(108,99,255,.2);border-radius:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="font-size:16px">🔑</span>
+            <span style="font-size:13px;font-weight:600;color:var(--text-primary)">获取网页登录 Token</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.8;margin-bottom:12px">
+            <div style="margin-bottom:4px">1. 点击下方按钮打开登录页面</div>
+            <div style="margin-bottom:4px">2. 使用你的账号登录（Google / 邮箱等）</div>
+            <div style="margin-bottom:4px">3. 登录成功后，按 <kbd style="padding:1px 5px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;font-size:11px">F12</kbd> 打开开发者工具</div>
+            <div style="margin-bottom:4px">4. 切换到 <span style="font-weight:500">Application</span> → <span style="font-weight:500">Cookies</span> → 选择网站域名</div>
+            <div style="margin-bottom:4px">5. 找到名为 <code style="padding:1px 4px;background:var(--bg-secondary);border-radius:3px;font-size:11px">token</code> 的 Cookie，复制它的值</div>
+            <div>6. 将复制的值粘贴到下方的 Token 输入框中</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openLoginPage()" style="width:100%">
+            <span style="font-size:13px">🌐 打开登录页面</span>
+          </button>
+          <div id="loginPageStatus" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:11px;text-align:center"></div>
+        </div>
         <div class="form-group"><label class="form-label">登录页面 URL</label><input class="form-input" id="pLoginUrl" placeholder="https://sider.ai"></div>
         <div class="form-group"><label class="form-label">API 端点</label><input class="form-input" id="pApiEndpoint" placeholder="https://sider.ai/api/v3/completion/text"></div>
         <div class="form-group"><label class="form-label">认证方式</label><select class="form-input" id="pAuthMode"><option value="bearer">Bearer Token</option><option value="cookie">Cookie</option></select></div>
@@ -1716,15 +1734,37 @@ function toggleProviderMode() {
   document.getElementById('pUrl').parentElement.style.display = isWeb ? 'none' : 'block';
   // Toggle Key label and placeholder
   const keyInput = document.getElementById('pKey');
+  const keyLabel = document.getElementById('pKeyLabel');
   if (isWeb) {
-    keyInput.placeholder = '粘贴网页登录后的 Token';
+    keyInput.placeholder = '粘贴从浏览器获取的 Token';
+    if (keyLabel) keyLabel.textContent = '网页登录 Token *';
   } else {
     keyInput.placeholder = '输入 API Key';
+    if (keyLabel) keyLabel.textContent = 'API Key *';
   }
   // Update selected style
   document.getElementById('modeApiLabel').style.borderColor = isWeb ? 'var(--border-color)' : 'var(--primary)';
   document.getElementById('modeWebLabel').style.borderColor = isWeb ? 'var(--primary)' : 'var(--border-color)';
 }
+function openLoginPage() {
+  const loginUrl = document.getElementById('pLoginUrl').value.trim();
+  if (!loginUrl) {
+    const status = document.getElementById('loginPageStatus');
+    status.style.display = 'block';
+    status.style.background = 'rgba(255,99,71,.1)';
+    status.style.color = '#e74c3c';
+    status.textContent = '请先填写登录页面 URL';
+    setTimeout(() => { status.style.display = 'none'; }, 3000);
+    return;
+  }
+  const status = document.getElementById('loginPageStatus');
+  status.style.display = 'block';
+  status.style.background = 'rgba(46,204,113,.1)';
+  status.style.color = '#27ae60';
+  status.textContent = '✅ 已打开登录页面，登录后请按上方步骤获取 Token';
+  window.open(loginUrl, '_blank');
+}
+
 function editProvider(pid) {
   const p = allProviders.find(x => x.id === pid);
   if (!p) return;
@@ -1739,8 +1779,8 @@ function editProvider(pid) {
   document.getElementById('pUrl').value = p.base_url || '';
   document.getElementById('pKey').value = '';
   document.getElementById('pKey').placeholder = p.api_key ? `当前: ${p.api_key}（留空不修改）` : '输入 API Key';
-  document.getElementById('pProxy').value = p.proxy && p.proxy.startsWith('vmess://') ? p.proxy : '';
-  document.getElementById('pProxy').placeholder = p.proxy && !p.proxy.startsWith('vmess://') ? `当前代理: ${p.proxy}（输入新值覆盖）` : 'vmess://... 或 socks5://127.0.0.1:1080';
+  document.getElementById('pProxy').value = p.proxy && p.proxy.startsWith('vmess://') && p.proxy !== 'vmess://***' ? p.proxy : '';
+  document.getElementById('pProxy').placeholder = p.proxy && !p.proxy.startsWith('vmess://') ? `当前代理: ${p.proxy}（输入新值覆盖）` : (p.proxy === 'vmess://***' ? '当前已配置 VMess 代理（输入新值覆盖）' : 'vmess://... 或 socks5://127.0.0.1:1080');
   document.getElementById('pDesc').value = p.description || '';
   document.getElementById('pPriority').value = p.priority || 5;
   document.getElementById('pEnabled').checked = p.enabled !== false;

@@ -2,7 +2,7 @@ package main
 
 // CheckProviderNow triggers an immediate health check for a single provider.
 func (h *HealthChecker) CheckProviderNow(providerID string) {
-	p, ok := pm.Get(providerID)
+	p, ok := pm.GetRaw(providerID)
 	if !ok {
 		return
 	}
