@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -507,36 +508,54 @@ func handleBrowserLoginAction(w http.ResponseWriter, r *http.Request) {
 		}
 		time.Sleep(500 * time.Millisecond)
 
-	case "clickAt":
-		// Click at specific x,y coordinates on the page
-		// Value format: "x,y"
+	case "mouse":
+		// Real mouse event via CDP: type=move|click|dblclick|wheel, x,y, deltaX, deltaY
+		// Value format: "type,x,y" or "type,x,y,deltaX,deltaY"
 		parts := strings.Split(req.Value, ",")
-		if len(parts) != 2 {
-			writeError(w, 400, "坐标格式错误，需要 x,y")
+		if len(parts) < 3 {
+			writeError(w, 400, "鼠标事件格式错误")
 			return
 		}
+		mouseType := parts[0]
 		var x, y float64
-		fmt.Sscanf(parts[0], "%f", &x)
-		fmt.Sscanf(parts[1], "%f", &y)
-		// Use JavaScript to dispatch a real click at coordinates
-		clickJS := fmt.Sprintf(`(function(){
-			var el = document.elementFromPoint(%f, %f);
-			if(el){
-				var rect = el.getBoundingClientRect();
-				var evt = new MouseEvent('click', {
-					bubbles: true, cancelable: true,
-					clientX: %f, clientY: %f
-				});
-				el.dispatchEvent(evt);
-				return true;
+		fmt.Sscanf(parts[1], "%f", &x)
+		fmt.Sscanf(parts[2], "%f", &y)
+
+		switch mouseType {
+		case "move":
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseMoved, x, y),
+			)
+		case "click":
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseMoved, x, y),
+				input.DispatchMouseEvent(input.MousePressed, x, y).
+					WithButton(input.Left).WithClickCount(1),
+				input.DispatchMouseEvent(input.MouseReleased, x, y).
+					WithButton(input.Left).WithClickCount(1),
+			)
+			time.Sleep(300 * time.Millisecond)
+		case "dblclick":
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseMoved, x, y),
+				input.DispatchMouseEvent(input.MousePressed, x, y).
+					WithButton(input.Left).WithClickCount(2),
+				input.DispatchMouseEvent(input.MouseReleased, x, y).
+					WithButton(input.Left).WithClickCount(2),
+			)
+			time.Sleep(300 * time.Millisecond)
+		case "wheel":
+			deltaY := -100.0
+			if len(parts) > 4 {
+				fmt.Sscanf(parts[4], "%f", &deltaY)
 			}
-			return false;
-		})()`, x, y, x, y)
-		var clicked bool
-		if err := chromedp.Run(sess.ctx, chromedp.Evaluate(clickJS, &clicked)); err != nil {
-			errMsg = "点击失败: " + err.Error()
+			_ = chromedp.Run(sess.ctx,
+				input.DispatchMouseEvent(input.MouseWheel, x, y).
+					WithDeltaX(0).WithDeltaY(deltaY),
+			)
+			time.Sleep(300 * time.Millisecond)
 		}
-		time.Sleep(1 * time.Second)
+		// No error message for mouse events - they should be silent
 
 	default:
 		writeError(w, 400, "未知操作: "+req.Action)

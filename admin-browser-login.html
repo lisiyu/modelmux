@@ -353,6 +353,8 @@ select.form-input{appearance:none;cursor:pointer}
   .browser-layout{flex-direction:column}
   .browser-control-panel{width:100%}
 }
+
+@keyframes ripple{0%{transform:translate(-50%,-50%) scale(.5);opacity:1}100%{transform:translate(-50%,-50%) scale(2);opacity:0}}
 </style>
 </head>
 <body>
@@ -376,13 +378,17 @@ select.form-input{appearance:none;cursor:pointer}
     <!-- 截图区 -->
     <div class="browser-screenshot-area">
       <div class="screenshot-wrapper" id="screenshotWrapper">
-        <img id="browserScreenshot" style="width:100%;border:1px solid var(--border-color);border-radius:8px;min-height:200px;background:#f5f5f5;cursor:crosshair;display:block" alt="浏览器截图" onclick="onScreenshotClick(event)" />
+        <img id="browserScreenshot" style="width:100%;border:1px solid var(--border-color);border-radius:8px;min-height:200px;background:#f5f5f5;cursor:crosshair;display:block;user-select:none;-webkit-user-select:none;touch-action:none" alt="浏览器截图" />
+        <div id="clickRipple" style="position:absolute;width:20px;height:20px;border-radius:50%;border:2px solid #6c63ff;background:rgba(108,99,255,.3);pointer-events:none;display:none;transform:translate(-50%,-50%);animation:ripple .4s ease-out"></div>
       </div>
-      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="browserAction('scroll','up')" style="white-space:nowrap">⬆ 上滚</button>
-        <button class="btn btn-sm" onclick="browserAction('scroll','down')" style="white-space:nowrap">⬇ 下滚</button>
-        <button class="btn btn-sm" onclick="browserAction('screenshot')" style="white-space:nowrap">🔄 刷新截图</button>
-        <span id="browserCurrentURL" style="font-size:11px;color:var(--text-secondary);flex:1;min-width:120px;word-break:break-all;align-self:center"></span>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);cursor:pointer">
+          <input type="checkbox" id="liveMode" onchange="toggleLiveMode()" style="cursor:pointer" /> 实时模式
+        </label>
+        <button class="btn btn-sm" onclick="browserAction('scroll','up')" style="white-space:nowrap">⬆</button>
+        <button class="btn btn-sm" onclick="browserAction('scroll','down')" style="white-space:nowrap">⬇</button>
+        <button class="btn btn-sm" onclick="browserAction('screenshot')" style="white-space:nowrap">🔄</button>
+        <span id="browserCurrentURL" style="font-size:11px;color:var(--text-secondary);flex:1;min-width:100px;word-break:break-all"></span>
       </div>
     </div>
 
@@ -498,30 +504,108 @@ function browserNavigate() {
   });
 }
 
-function onScreenshotClick(e) {
-  if (!browserLoginProviderId) return;
-  var img = document.getElementById('browserScreenshot');
-  if (!img.src || img.src.indexOf('data:') !== 0) return;
-  var rect = img.getBoundingClientRect();
-  // The screenshot is 1280px wide (Chrome window size), calculate scale
+var livePolling = null;
+var imgEl = document.getElementById('browserScreenshot');
+var wrapperEl = document.getElementById('screenshotWrapper');
+
+function getCoords(e) {
+  var rect = imgEl.getBoundingClientRect();
   var naturalWidth = 1280;
   var scale = naturalWidth / rect.width;
-  var x = Math.round((e.clientX - rect.left) * scale);
-  var y = Math.round((e.clientY - rect.top) * scale);
-  document.getElementById('browserLoginStatus').textContent = '正在点击 (' + x + ', ' + y + ') ...';
+  var clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+  var clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+  return {
+    x: Math.round((clientX - rect.left) * scale),
+    y: Math.round((clientY - rect.top) * scale),
+    localX: clientX - rect.left,
+    localY: clientY - rect.top
+  };
+}
+
+function showRipple(localX, localY) {
+  var ripple = document.getElementById('clickRipple');
+  ripple.style.left = localX + 'px';
+  ripple.style.top = localY + 'px';
+  ripple.style.display = 'block';
+  setTimeout(function() { ripple.style.display = 'none'; }, 400);
+}
+
+function sendMouse(type, x, y, extra) {
+  if (!browserLoginProviderId) return;
+  var value = type + ',' + x + ',' + y;
+  if (extra) value += ',' + extra;
   fetch('/api/providers/' + browserLoginProviderId + '/browser-login/action', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'clickAt', value: x + ',' + y })
-  }).then(r => r.json()).then(data => {
+    body: JSON.stringify({ action: 'mouse', value: value })
+  }).then(function(r) { return r.json(); }).then(function(data) {
     if (data.error) {
       document.getElementById('browserLoginStatus').textContent = '错误: ' + (data.error.message || data.error);
       return;
     }
-    document.getElementById('browserLoginStatus').textContent = data.message || '点击完成';
-    if (data.screenshot) document.getElementById('browserScreenshot').src = 'data:image/jpeg;base64,' + data.screenshot;
+    if (data.screenshot) imgEl.src = 'data:image/jpeg;base64,' + data.screenshot;
     if (data.current_url) document.getElementById('browserCurrentURL').textContent = data.current_url;
-  });
+  }).catch(function() {});
+}
+
+// Mouse events on screenshot
+imgEl.addEventListener('click', function(e) {
+  if (!imgEl.src || imgEl.src.indexOf('data:') !== 0) return;
+  var c = getCoords(e);
+  showRipple(c.localX, c.localY);
+  sendMouse('click', c.x, c.y);
+});
+
+imgEl.addEventListener('dblclick', function(e) {
+  if (!imgEl.src || imgEl.src.indexOf('data:') !== 0) return;
+  e.preventDefault();
+  var c = getCoords(e);
+  sendMouse('dblclick', c.x, c.y);
+});
+
+imgEl.addEventListener('wheel', function(e) {
+  if (!imgEl.src || imgEl.src.indexOf('data:') !== 0) return;
+  e.preventDefault();
+  var c = getCoords(e);
+  var deltaY = e.deltaY > 0 ? '-300' : '300';
+  sendMouse('wheel', c.x, c.y, '0,' + deltaY);
+}, { passive: false });
+
+// Touch support for mobile
+var touchLastTap = 0;
+imgEl.addEventListener('touchend', function(e) {
+  if (!imgEl.src || imgEl.src.indexOf('data:') !== 0) return;
+  e.preventDefault();
+  var c = getCoords(e.changedTouches[0] ? { clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY } : e);
+  showRipple(c.localX, c.localY);
+  var now = Date.now();
+  if (now - touchLastTap < 350) {
+    sendMouse('dblclick', c.x, c.y);
+    touchLastTap = 0;
+  } else {
+    sendMouse('click', c.x, c.y);
+    touchLastTap = now;
+  }
+}, { passive: false });
+
+function toggleLiveMode() {
+  var enabled = document.getElementById('liveMode').checked;
+  if (enabled) {
+    livePolling = setInterval(function() {
+      if (!browserLoginProviderId) return;
+      fetch('/api/providers/' + browserLoginProviderId + '/browser-login/status', {
+        headers: { 'Authorization': 'Bearer ' + authToken }
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.screenshot) imgEl.src = 'data:image/jpeg;base64,' + data.screenshot;
+        if (data.current_url) document.getElementById('browserCurrentURL').textContent = data.current_url;
+        if (data.message) document.getElementById('browserLoginStatus').textContent = data.message;
+      }).catch(function() {});
+    }, 1000);
+    document.getElementById('browserLoginStatus').textContent = '实时模式已开启';
+  } else {
+    if (livePolling) { clearInterval(livePolling); livePolling = null; }
+    document.getElementById('browserLoginStatus').textContent = '实时模式已关闭';
+  }
 }
 
 function browserAction(action, extraValue) {
