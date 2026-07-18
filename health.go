@@ -158,6 +158,52 @@ func (h *HealthChecker) checkProvider(p Provider) {
 			}
 		}
 
+	case "web_session":
+		// Web session: test each key, healthy if any succeeds
+		type wsKeyEntry struct {
+			alias string
+			token string
+		}
+		var wsKeysToTry []wsKeyEntry
+		for _, k := range p.APIKeys {
+			if !k.Enabled {
+				continue
+			}
+			decrypted, err := decryptAPIKey(k.Key)
+			if err != nil {
+				slog.Debug("health check: failed to decrypt web_session key", "key_id", k.ID, "error", err)
+				continue
+			}
+			wsKeysToTry = append(wsKeysToTry, wsKeyEntry{alias: k.Alias, token: decrypted})
+		}
+		if len(wsKeysToTry) == 0 && p.APIKey != "" {
+			token := p.APIKey
+			if IsEncrypted(token) {
+				if decrypted, err := decryptAPIKey(token); err == nil {
+					token = decrypted
+				}
+			}
+			wsKeysToTry = append(wsKeysToTry, wsKeyEntry{alias: "default", token: token})
+		}
+		if len(wsKeysToTry) == 0 {
+			failReason = "no token configured"
+			break
+		}
+		for _, ke := range wsKeysToTry {
+			keysTested++
+			testP := p
+			testP.APIKey = ke.token
+			reqStart := time.Now()
+			result := testWebSession(testP)
+			latencyMS = float64(time.Since(reqStart).Milliseconds())
+			if result["success"] == true {
+				healthy = true
+				break
+			}
+			failReason = ke.alias + ": " + result["error"].(string)
+			keysFailed++
+		}
+
 	default:
 		// OpenAI-compatible: try all enabled keys, healthy if any succeeds
 		// Use POST /chat/completions directly (more reliable than GET /models)

@@ -437,9 +437,15 @@ func testWebSession(p Provider) map[string]any {
 	if err != nil {
 		return map[string]any{"success": false, "error": err.Error()}
 	}
+	respBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	bodyStr := string(respBody)
+	// Detect Cloudflare challenge
+	if resp.StatusCode == 403 && (strings.Contains(bodyStr, "Just a moment") || strings.Contains(bodyStr, "cloudflare")) {
+		return map[string]any{"success": false, "error": "被 Cloudflare 拦截（代理 IP 可能被标记），请尝试更换代理或使用住宅 IP 代理"}
+	}
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		return map[string]any{"success": false, "error": fmt.Sprintf("Token expired (HTTP %d)", resp.StatusCode)}
+		return map[string]any{"success": false, "error": fmt.Sprintf("Token 无效或过期 (HTTP %d)", resp.StatusCode)}
 	}
 	if resp.StatusCode >= 400 {
 		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}
@@ -1296,6 +1302,9 @@ func testConnectionWithKey(p Provider, keyOverride string) map[string]any {
 			return map[string]any{"success": true, "message": "Anthropic API connected"}
 		}
 		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", testResp.StatusCode)}
+
+	case "web_session":
+		return testWebSession(testProvider)
 
 	default: // openai_compatible
 		if testProvider.APIKey == "" {
