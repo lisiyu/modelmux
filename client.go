@@ -437,7 +437,21 @@ func testWebSession(p Provider) map[string]any {
 	if token == "" {
 		return map[string]any{"success": false, "error": "Token not configured"}
 	}
-	payload := webSessionBuildPayload(cfg, "auto", []ChatMessage{{Role: "user", Content: "hi"}}, false)
+	// Pick first enabled model for testing; fall back to "auto"
+	testModel := "auto"
+	for _, m := range p.Models {
+		if m.Enabled {
+			testModel = m.ID
+			break
+		}
+	}
+	payload := webSessionBuildPayload(cfg, testModel, []ChatMessage{{Role: "user", Content: "hi"}}, false)
+	// Override prompt to a simple ping for minimal test
+	if cfg.PromptField == "" || cfg.PromptField == "prompt" {
+		payload["prompt"] = "ping"
+	} else {
+		payload[cfg.PromptField] = "ping"
+	}
 	body, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", cfg.APIEndpoint, bytes.NewReader(body))
 	req.Header = webSessionBuildHeaders(cfg, token)
@@ -457,7 +471,9 @@ func testWebSession(p Provider) map[string]any {
 		return map[string]any{"success": false, "error": fmt.Sprintf("Token 无效或过期 (HTTP %d)", resp.StatusCode)}
 	}
 	if resp.StatusCode >= 400 {
-		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}
+		// Include response body snippet for debugging
+		errDetail := truncate(bodyStr, 200)
+		return map[string]any{"success": false, "error": fmt.Sprintf("HTTP %d: %s", resp.StatusCode, errDetail)}
 	}
 	return map[string]any{"success": true, "message": p.Name + " connected"}
 }
