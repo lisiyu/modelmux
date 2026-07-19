@@ -18,8 +18,14 @@ echo "[devcontainer] installing chromium + fonts ..."
 sudo apt-get update -qq 2>/dev/null || true
 sudo apt-get install -y -qq chromium fonts-liberation fonts-noto-cjk 2>/dev/null || true
 
-echo "[devcontainer] building openmodelpool ..."
-go build -o openmodelpool . || { echo "[devcontainer] ❌ go build failed, aborting (not starting a dead service)"; exit 1; }
+echo "[devcontainer] building openmodelpool ... (build log -> /tmp/omp-build.log)"
+go build -o openmodelpool . > /tmp/omp-build.log 2>&1
+if [ $? -ne 0 ]; then
+  echo "[devcontainer] ❌ go build failed, aborting. Last 40 lines of /tmp/omp-build.log:"
+  tail -n 40 /tmp/omp-build.log
+  exit 1
+fi
+echo "[devcontainer] ✅ build ok"
 
 # 写 supervisor 脚本到 /tmp。使用 quoted heredoc，使 $(date) 与 $? 在文件内保持字面量；
 # OMP_REPO 通过已导出的环境变量传入（setsid 会继承当前环境）。

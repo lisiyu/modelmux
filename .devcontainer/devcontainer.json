@@ -1,6 +1,11 @@
 {
   "name": "openmodelpool",
   "image": "mcr.microsoft.com/devcontainers/go:1.26",
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  },
   "forwardPorts": [8000, 8001, 8443],
   "portsAttributes": {
     "8000": { "label": "openmodelpool HTTP", "visibility": "public", "protocol": "http" },
