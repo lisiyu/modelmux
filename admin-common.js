@@ -22,6 +22,24 @@ function escapeJS(s) {
   return String(s).replace(/[\\'"`\n\r\t]/g, function(c){ return '\\' + c; });
 }
 
+// safeUrl validates a URL before it is placed into an HTML href/src attribute.
+// Only http:, https:, mailto:, and same-origin relative links (starting with
+// '/', '#', or './') are allowed. Any dangerous scheme (e.g. javascript:,
+// data:, vbscript:) is rejected and replaced with '#' to prevent XSS.
+function safeUrl(url) {
+  if (url === null || url === undefined) return '#';
+  const s = String(url).trim();
+  if (s === '') return '#';
+  if (s.startsWith('/') || s.startsWith('#') || s.startsWith('./')) {
+    return escapeAttr(s);
+  }
+  const lower = s.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:')) {
+    return escapeAttr(s);
+  }
+  return '#';
+}
+
 let authToken = localStorage.getItem('admin_token') || '';
 
 async function authFetch(url, opts = {}) {

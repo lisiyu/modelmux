@@ -123,7 +123,7 @@ async function importConfig(input) {
         if (!el) return;
         el.style.display = 'block';
         if (d.bound) {
-          el.innerHTML = '✅ 已绑定: <strong>' + escapeHtml(d.domain) + '</strong> | 公网地址: <a href="' + escapeAttr(d.public_url) + '" target="_blank">' + escapeHtml(d.public_url) + '</a> | Tunnel ID: ' + escapeHtml(d.tunnel_id);
+          el.innerHTML = '✅ 已绑定: <strong>' + escapeHtml(d.domain) + '</strong> | 公网地址: <a href="' + safeUrl(d.public_url) + '" target="_blank">' + escapeHtml(d.public_url) + '</a> | Tunnel ID: ' + escapeHtml(d.tunnel_id);
           el.style.background = 'rgba(16,185,129,0.1)';
           document.getElementById('unbindDomainBtn').style.display = '';
           document.getElementById('cfDomain').value = d.domain;
