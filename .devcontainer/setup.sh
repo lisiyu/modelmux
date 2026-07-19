@@ -14,6 +14,18 @@ export OMP_REPO
 echo "[devcontainer] repo root: $OMP_REPO"
 cd "$OMP_REPO"
 
+# 诊断：尽早起一个 HTTP 日志服务（端口 8002），即使后续构建/启动失败也能从外部
+# 读取 /tmp 下的启动日志（Codespaces 会自动转发任何监听端口）。
+echo "[devcontainer] installing python3 for diagnostics log server ..."
+sudo apt-get update -qq 2>/dev/null || true
+sudo apt-get install -y -qq python3 >/dev/null 2>&1 || true
+if command -v python3 >/dev/null 2>&1; then
+  setsid bash -c 'cd /tmp && python3 -m http.server 8002 --bind 0.0.0.0 >/tmp/omp-logserver.log 2>&1' </dev/null >/dev/null 2>&1 &
+  echo "[devcontainer] ✅ diagnostics log server started on :8002 (serves /tmp)"
+else
+  echo "[devcontainer] ⚠️ python3 unavailable, skipping diagnostics log server"
+fi
+
 echo "[devcontainer] installing chromium + fonts ..."
 sudo apt-get update -qq 2>/dev/null || true
 sudo apt-get install -y -qq chromium fonts-liberation fonts-noto-cjk 2>/dev/null || true
