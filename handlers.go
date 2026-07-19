@@ -153,14 +153,14 @@ func handleFederationStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, status)
 }
 
-// getLocalIP returns the first non-loopback IPv4 address.
+// getLocalIP returns the first non-loopback, non-link-local IPv4 address.
 func getLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return ""
 	}
 	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && !ipnet.IP.IsLinkLocalUnicast() {
 			if ipnet.IP.To4() != nil {
 				return ipnet.IP.String()
 			}

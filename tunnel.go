@@ -878,7 +878,7 @@ func handleGetAddresses(w http.ResponseWriter, r *http.Request) {
 		addrs, err := net.InterfaceAddrs()
 		if err == nil {
 			for _, addr := range addrs {
-				if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+				if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && !ipnet.IP.IsLinkLocalUnicast() {
 					if ipnet.IP.To4() != nil {
 						lanIP = ipnet.IP.String()
 						break
