@@ -11,7 +11,7 @@
     "8000": { "label": "openmodelpool HTTP", "visibility": "public", "protocol": "http" },
     "8001": { "label": "seed discovery", "visibility": "private" },
     "8443": { "label": "HTTPS (ACME)", "visibility": "private" },
-    "8002": { "label": "diagnostics log server", "visibility": "public", "protocol": "http" }
+    "8002": { "label": "diagnostics log server", "visibility": "private", "protocol": "http" }
   },
   "postCreateCommand": "bash /workspaces/openmodelpool/.devcontainer/build.sh",
   "command": "bash /workspaces/openmodelpool/.devcontainer/run-omp.sh",
