@@ -818,6 +818,13 @@ async function saveProvider() {
   }
   const mode = document.querySelector('input[name="providerMode"]:checked')?.value || 'api';
   let providerType = 'openai_compatible';
+  // 编辑模式下保留已有 provider type（如 coze）
+  if (editingId) {
+    const existingProvider = allProviders.find(x => x.id === editingId);
+    if (existingProvider && existingProvider.type && existingProvider.type !== 'openai_compatible' && existingProvider.type !== 'web_session') {
+      providerType = existingProvider.type;
+    }
+  }
   let webSessionData = null;
   if (mode === 'web') {
     providerType = 'web_session';
