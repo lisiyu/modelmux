@@ -58,6 +58,7 @@ type FederationManager struct {
 	localPeers   map[string]*NodeInfo // node_id -> latest info from gossip
 	enabled      bool
 	relayEnabled bool
+	loopRunning  bool                  // whether the refresh loop goroutine is active
 	dataDir      string
 	stopCh       chan struct{}
 	lastETag     string // ETag for conditional HTTP requests to registry
@@ -66,7 +67,9 @@ type FederationManager struct {
 var fed *FederationManager
 
 // initFederation loads federation config from cfg, loads cached trust pool from
-// dataDir/federation_pool.json, and starts the periodic refresh loop.
+// dataDir/federation_pool.json, and prepares the manager. It does NOT start the
+// refresh loop here — federation activation now follows network_enabled via
+// syncFederationToNetwork() (REQ-2 / T2).
 func initFederation(dataDir string) {
 	f := &FederationManager{
 		localPeers: make(map[string]*NodeInfo),
@@ -74,7 +77,11 @@ func initFederation(dataDir string) {
 		stopCh:     make(chan struct{}),
 	}
 
-	f.enabled = cfg.Get("federation_enabled", "false") == "true"
+	// REQ-2: federation is no longer driven by the legacy federation_enabled key.
+	// Its enabled state now follows NetworkManager.network_enabled via
+	// syncFederationToNetwork(). Start disabled; the refresh loop is started later
+	// once network_enabled is reconciled (after netMgr.Init()).
+	f.enabled = false
 	f.relayEnabled = cfg.Get("federation_relay_enabled", "false") == "true"
 
 	if err := f.load(); err != nil {
@@ -83,18 +90,12 @@ func initFederation(dataDir string) {
 	}
 
 	fed = f
-
-	if f.enabled {
-		slog.Info("federation manager initialized",
-			"enabled", f.enabled,
-			"relay_enabled", f.relayEnabled,
-			"pool_version", f.trustPool.Version,
-			"nodes", len(f.trustPool.Nodes),
-		)
-		go f.refreshLoop()
-	} else {
-		slog.Info("federation is disabled")
-	}
+	slog.Info("federation manager initialized (activation follows network_enabled)",
+		"enabled", f.enabled,
+		"relay_enabled", f.relayEnabled,
+		"pool_version", f.trustPool.Version,
+		"nodes", len(f.trustPool.Nodes),
+	)
 }
 
 // IsEnabled reports whether federation is enabled.
@@ -404,8 +405,64 @@ func (f *FederationManager) hasActivePeers() bool {
 	return false
 }
 
+// SetEnabled reconciles the federation enabled state. Enabling starts the refresh
+// loop (idempotent); disabling stops it. This is the only path that toggles the
+// loop, keeping activation centralized on the network_enabled single source of
+// truth (REQ-2).
+func (f *FederationManager) SetEnabled(enabled bool) {
+	f.mu.Lock()
+	if f.enabled == enabled {
+		f.mu.Unlock()
+		return
+	}
+	f.enabled = enabled
+	f.mu.Unlock()
+
+	if enabled {
+		f.startLoop()
+		slog.Info("federation enabled — refresh loop started")
+	} else {
+		f.stopLoop()
+		slog.Info("federation disabled — refresh loop stopped")
+	}
+}
+
+// startLoop starts the federation refresh loop if it is not already running.
+func (f *FederationManager) startLoop() {
+	f.mu.Lock()
+	if f.loopRunning {
+		f.mu.Unlock()
+		return
+	}
+	f.loopRunning = true
+	f.mu.Unlock()
+	go f.refreshLoop()
+}
+
+// stopLoop stops the federation refresh loop if it is running, signalling the
+// goroutine to exit and preparing a fresh stop channel for a future restart.
+func (f *FederationManager) stopLoop() {
+	f.mu.Lock()
+	if !f.loopRunning {
+		f.mu.Unlock()
+		return
+	}
+	f.loopRunning = false
+	f.mu.Unlock()
+
+	// Signal the running loop to exit (idempotent close).
+	select {
+	case <-f.stopCh:
+		// already closed
+	default:
+		close(f.stopCh)
+	}
+	// Fresh channel so a later startLoop() has a valid signal target.
+	f.stopCh = make(chan struct{})
+}
+
 // stop gracefully shuts down the federation manager.
 func (f *FederationManager) stop() {
-	close(f.stopCh)
+	f.stopLoop()
 	slog.Info("federation manager stopped")
 }

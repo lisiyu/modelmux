@@ -40,6 +40,15 @@ type ContribRecord struct {
 	FromNodeID string `json:"from_node_id"`
 }
 
+// ShareBoundaryConfig defines the contribution boundary for sharing idle quota
+// to the shared pool. Introduced in Phase 1 slice ① as the schema foundation for
+// REQ-12 (enforcement lands in a later slice). It is persisted but not yet enforced.
+type ShareBoundaryConfig struct {
+	DailyContribCap int64    `json:"daily_contrib_cap"` // 每日贡献上限(Token)：0 = 不限制
+	ShareIdleOnly   bool     `json:"share_idle_only"`   // 仅共享空闲额度：默认 true
+	ModelWhitelist  []string `json:"model_whitelist"`   // 模型/Provider 白名单：空 = 全部
+}
+
 // NetworkConfig holds all shared network configuration
 type NetworkConfig struct {
 	Mode              NetworkMode     `json:"mode"`
@@ -75,6 +84,9 @@ type NetworkConfig struct {
 	// v2.0 Quota Allocation
 	QuotaAllocation   QuotaAllocation                 `json:"quota_allocation"`
 
+	// v3.2: REQ-12 foundation — contribution boundary for the shared pool.
+	// Persisted in slice ①; enforcement arrives in a later slice.
+	ShareBoundary     ShareBoundaryConfig             `json:"share_boundary"`
 }
 
 // PeerInfo represents a connected peer in the shared network
@@ -329,6 +341,13 @@ func initNetworkManager(dataDir string) {
 			MaxDailyRequests: 1000,
 			Addresses:        []string{},
 			RelayEnabled:     true, // default on when in shared mode
+			// REQ-12 foundation: conservative defaults — only share idle quota,
+			// no daily cap, all models (matches PRD Q6).
+			ShareBoundary: ShareBoundaryConfig{
+				DailyContribCap: 0,
+				ShareIdleOnly:   true,
+				ModelWhitelist:  []string{},
+			},
 		},
 	}
 	netMgr.load()
@@ -371,6 +390,21 @@ func (nm *NetworkManager) load() {
 	if nm.config.Mode == NetworkModeShared && !nm.config.NetworkEnabled {
 		nm.config.NetworkEnabled = true
 	}
+
+	// REQ-2 升级迁移：旧全局键 federation_enabled=true 且当前未入网
+	// ⇒ 收敛为单一真值源 network_enabled=true，并清除旧键避免状态漂移。
+	if cfg.Get("federation_enabled", "false") == "true" && !nm.config.NetworkEnabled {
+		nm.config.NetworkEnabled = true
+		nm.config.Mode = NetworkModeShared
+		cfg.Set("federation_enabled", "false")
+		cfg.save()
+		slog.Info("migrated legacy federation_enabled=true → network_enabled=true")
+	}
+
+	// Ensure ShareBoundary slices are never nil (clean JSON round-trip).
+	if nm.config.ShareBoundary.ModelWhitelist == nil {
+		nm.config.ShareBoundary.ModelWhitelist = []string{}
+	}
 }
 
 func (nm *NetworkManager) save() {
@@ -385,22 +419,25 @@ func (nm *NetworkManager) doSave() {
 	os.WriteFile(nm.dataPath, b, 0600)
 }
 
-// Init loads config and derives NodeID. Starts refresh loop if shared mode.
+// Init loads config and activates network subsystems only when network_enabled
+// is true. In personal mode (network_enabled=false) it deliberately does NOT
+// derive a NodeID nor start the refresh loop — keeping the node with zero
+// extra outbound connections (REQ-1 / REQ-2 startup guard, T6).
 func (nm *NetworkManager) Init() error {
 	nm.load()
 
-	// Derive P2P NodeID from Ed25519 identity
-	if nm.config.NodeID == "" && node != nil && node.IsInitialized() {
-		nm.config.NodeID = DeriveP2PNodeID()
-		nm.doSave()
-		slog.Info("derived P2P NodeID", "node_id", nm.config.NodeID)
-	}
-
-	if nm.config.Mode == NetworkModeShared && nm.config.ConsentAccepted {
-		nm.startTime = time.Now()
-		nm.registerSelf()
-		nm.startRefreshLoop()
+	// Only derive an identity and bring network subsystems online when the
+	// single source of truth (network_enabled) is set.
+	if nm.config.NetworkEnabled {
+		if nm.config.NodeID == "" && node != nil && node.IsInitialized() {
+			nm.config.NodeID = DeriveP2PNodeID()
+			nm.doSave()
+			slog.Info("derived P2P NodeID", "node_id", nm.config.NodeID)
+		}
+		nm.activateNetwork()
 		slog.Info("shared network mode active", "node_id", nm.config.NodeID)
+	} else {
+		slog.Info("personal mode (network disabled) — no network subsystems started")
 	}
 	return nil
 }
@@ -503,12 +540,15 @@ func (nm *NetworkManager) stopRefreshLoop() {
 	}
 }
 
-// EnableSharedNetwork activates shared network (requires consent)
+// EnableSharedNetwork activates the shared network. Requires prior consent
+// (recorded via /api/network/consent). After preparing identity it funnels
+// through activateNetwork() so the refresh loop and federation manager stay
+// in sync with the single source of truth (REQ-2 / T3).
 func (nm *NetworkManager) EnableSharedNetwork() error {
 	nm.mu.Lock()
-	defer nm.mu.Unlock()
 
 	if !nm.config.ConsentAccepted {
+		nm.mu.Unlock()
 		return fmt.Errorf("consent not accepted")
 	}
 	if nm.config.NodeID == "" {
@@ -516,6 +556,7 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 			// Auto-generate node identity on first join
 			mnemonic, err := node.GenerateWithMnemonic(12)
 			if err != nil {
+				nm.mu.Unlock()
 				return fmt.Errorf("failed to generate node identity: %w", err)
 			}
 			nm.pendingMnemonic = mnemonic
@@ -525,6 +566,7 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 			nm.config.NodeID = DeriveP2PNodeID()
 		}
 		if nm.config.NodeID == "" {
+			nm.mu.Unlock()
 			return fmt.Errorf("node identity not initialized")
 		}
 	}
@@ -537,31 +579,23 @@ func (nm *NetworkManager) EnableSharedNetwork() error {
 	}
 
 	nm.config.Mode = NetworkModeShared
-	nm.config.NetworkEnabled = true  // §4.2: Level 2 — Network Mode (join network, don't share by default)
+	nm.config.NetworkEnabled = true // §4.2: Level 2 — Network Mode (join network, don't share by default)
 	nm.config.Stats.JoinedAt = time.Now().Format(time.RFC3339)
-	nm.startTime = time.Now()
+	nm.mu.Unlock()
 
-	// v2.0: Public key is now a fixed constant (sk-openmodelpool-com-github-lisiyu-openmodelpool-public-key-v1), no generation needed
-
+	// v2.0: Public key is now a fixed constant, no generation needed.
 	nm.doSave()
-
-	go nm.registerSelf()
-	nm.startRefreshLoop()
-
-	// v2.0: Log network join
-	go func() {
-		time.Sleep(2 * time.Second)
-		slog.Info("network node active", "node_id", nm.config.NodeID)
-	}()
+	nm.activateNetwork()
 
 	slog.Info("shared network enabled", "node_id", nm.config.NodeID, "name", nm.config.NodeName)
 	return nil
 }
 
-// DisableSharedNetwork returns to personal mode
+// DisableSharedNetwork returns to personal mode. Funnels through
+// deactivateNetwork() so the federation manager and refresh loop are torn down
+// consistently (REQ-2 / T3).
 func (nm *NetworkManager) DisableSharedNetwork() error {
 	nm.mu.Lock()
-	defer nm.mu.Unlock()
 
 	nm.stopRefreshLoop()
 
@@ -570,12 +604,15 @@ func (nm *NetworkManager) DisableSharedNetwork() error {
 	}
 
 	nm.config.Mode = NetworkModePersonal
-	nm.config.NetworkEnabled = false  // §4.2: Level 1 — Personal Mode
-	nm.config.ShareToPool = false     // §4.2: disable sharing when leaving network
+	nm.config.NetworkEnabled = false // §4.2: Level 1 — Personal Mode
+	nm.config.ShareToPool = false    // §4.2: disable sharing when leaving network
 	nm.config.Peers = []PeerInfo{}
 	nm.config.Stats.OnlinePeers = 0
 	nm.config.Addresses = []string{}
+	nm.mu.Unlock()
+
 	nm.doSave()
+	nm.deactivateNetwork()
 
 	slog.Info("shared network disabled")
 	return nil
@@ -644,6 +681,8 @@ func (nm *NetworkManager) GetStatus() map[string]any {
 		// v2.0 Quota Allocation
 		"quota_allocation":  nm.config.QuotaAllocation,
 
+		// v3.2: REQ-12 foundation — contribution boundary (persisted, not yet enforced)
+		"share_boundary": nm.config.ShareBoundary,
 	}
 }
 
@@ -829,25 +868,83 @@ func (nm *NetworkManager) UpdateConfig(nodeName string, sharedModels []string, m
 // SetShareToPool updates the share_to_pool toggle.
 // v3.1: This controls whether the node contributes its providers to the shared pool.
 // Independent from network participation — a node can be in the network without sharing.
+// If enabling share_to_pool auto-activates the network, the full activation path runs.
 func (nm *NetworkManager) SetShareToPool(enabled bool) {
 	nm.mu.Lock()
-	defer nm.mu.Unlock()
+	autoEnabled := false
 	// §4.2: Can only share if network is enabled (Level 3 requires Level 2)
 	if enabled && !nm.config.NetworkEnabled {
 		nm.config.NetworkEnabled = true
 		nm.config.Mode = NetworkModeShared
+		autoEnabled = true
 		slog.Info("auto-enabled network for share_to_pool", "node_id", nm.config.NodeID)
 	}
 	nm.config.ShareToPool = enabled
+	nm.mu.Unlock()
 	nm.doSave()
 	slog.Info("share_to_pool updated", "enabled", enabled, "network_enabled", nm.config.NetworkEnabled, "node_id", nm.config.NodeID)
+	if autoEnabled {
+		nm.activateNetwork()
+	}
+}
+
+// activateNetwork brings the node's network subsystems online. It is the single
+// activation path shared by EnableSharedNetwork, SetNetworkEnabled(true) and
+// Init() (when network_enabled). It derives a NodeID if the identity is ready,
+// registers self, starts the refresh loop (idempotent) and synchronizes the
+// FederationManager to follow the network_enabled single source of truth (REQ-2).
+func (nm *NetworkManager) activateNetwork() {
+	// Derive NodeID if not yet present and identity material is available.
+	nm.mu.RLock()
+	haveID := nm.config.NodeID != ""
+	nm.mu.RUnlock()
+	if !haveID && node != nil && node.IsInitialized() {
+		nm.mu.Lock()
+		nm.config.NodeID = DeriveP2PNodeID()
+		nm.mu.Unlock()
+	}
+
+	nm.startTime = time.Now()
+	go nm.registerSelf()
+	// Start the refresh loop only if it is not already running.
+	if nm.stopRefresh == nil {
+		nm.startRefreshLoop()
+	}
+	// Reconcile federation (and, via fed.IsEnabled(), gossip) with network_enabled.
+	nm.syncFederationToNetwork()
+}
+
+// deactivateNetwork tears down network subsystems. It is the single deactivation
+// path shared by DisableSharedNetwork and SetNetworkEnabled(false).
+func (nm *NetworkManager) deactivateNetwork() {
+	nm.stopRefreshLoop()
+	// Reconcile federation to disabled state (stops its refresh loop).
+	nm.syncFederationToNetwork()
+}
+
+// syncFederationToNetwork reconciles the FederationManager's enabled state with the
+// NetworkManager's single source of truth network_enabled (REQ-2). It must be called
+// whenever network_enabled changes and after both managers are initialized. In
+// personal mode (network_enabled=false) the federation refresh loop is kept stopped,
+// guaranteeing no extra outbound connections (REQ-1 startup guard).
+func (nm *NetworkManager) syncFederationToNetwork() {
+	if fed == nil {
+		return
+	}
+	nm.mu.RLock()
+	enabled := nm.config.NetworkEnabled
+	nm.mu.RUnlock()
+	fed.SetEnabled(enabled)
 }
 
 // SetNetworkEnabled toggles network participation independently.
 // §4.2: When disabling network, also disable share_to_pool (can't share without network).
+// All activation/deactivation routes through activateNetwork/deactivateNetwork so
+// the refresh loop and federation manager stay reconciled with the single source of
+// truth (REQ-2 / T3).
 func (nm *NetworkManager) SetNetworkEnabled(enabled bool) {
+	wasEnabled := nm.config.NetworkEnabled
 	nm.mu.Lock()
-	defer nm.mu.Unlock()
 	nm.config.NetworkEnabled = enabled
 	if !enabled {
 		// §4.2: Disabling network forces personal mode and disables sharing
@@ -857,8 +954,15 @@ func (nm *NetworkManager) SetNetworkEnabled(enabled bool) {
 		// §4.2: Enabling network without sharing = Level 2 (Network Mode)
 		nm.config.Mode = NetworkModeShared
 	}
+	nm.mu.Unlock()
 	nm.doSave()
 	slog.Info("network_enabled updated", "enabled", enabled, "mode", nm.config.Mode, "share_to_pool", nm.config.ShareToPool, "node_id", nm.config.NodeID)
+
+	if enabled && !wasEnabled {
+		nm.activateNetwork()
+	} else if !enabled && wasEnabled {
+		nm.deactivateNetwork()
+	}
 }
 
 // SetCapabilities updates the node's capability declarations.

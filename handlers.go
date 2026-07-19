@@ -185,7 +185,6 @@ func handleGetFederationConfig(w http.ResponseWriter, r *http.Request) {
 	servicePort := cfg.Get("port", "8000")
 
 	writeJSON(w, 200, map[string]any{
-		"federation_enabled":       cfg.Get("federation_enabled", "false"),
 		"federation_relay_enabled": cfg.Get("federation_relay_enabled", "false"),
 		"federation_registry_url":  cfg.Get("federation_registry_url", ""),
 		"federation_registry_repo": cfg.Get("federation_registry_repo", "lisiyu/openmodelpool"),
@@ -217,7 +216,7 @@ func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, key := range []string{
-		"federation_enabled", "federation_relay_enabled",
+		"federation_relay_enabled",
 		"federation_registry_url", "federation_registry_repo",
 		"gossip_interval_s", "heartbeat_interval_s",
 		"tunnel_enabled", "tunnel_mode", "tunnel_domain", "tunnel_url",
@@ -229,10 +228,11 @@ func handleSaveFederationConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.save()
 
-	// Apply federation config changes to running instance
+	// Apply federation config changes to running instance.
+	// Note: federation_enabled is no longer a runtime switch (REQ-2); federation
+	// follows network_enabled via syncFederationToNetwork(). Only relay is applied here.
 	if fed != nil {
 		fed.mu.Lock()
-		fed.enabled = cfg.Get("federation_enabled", "false") == "true"
 		fed.relayEnabled = cfg.Get("federation_relay_enabled", "false") == "true"
 		fed.mu.Unlock()
 	}

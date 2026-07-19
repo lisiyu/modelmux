@@ -382,10 +382,13 @@ func gracefulShutdown(server *http.Server) {
 			cfg.load()
 			// Reinitialize rate limiter with new config
 			initRateLimiter()
-			// Reload federation config if changed
+			// Reload federation: reconcile with the network_enabled single source
+			// of truth instead of the legacy federation_enabled key (REQ-2).
+			if netMgr != nil {
+				netMgr.syncFederationToNetwork()
+			}
 			if fed != nil {
 				fed.mu.Lock()
-				fed.enabled = cfg.Get("federation_enabled", "false") == "true"
 				fed.relayEnabled = cfg.Get("federation_relay_enabled", "false") == "true"
 				fed.mu.Unlock()
 			}

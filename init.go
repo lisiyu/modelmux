@@ -97,6 +97,12 @@ func initAllNetwork() {
 	// P2P shared network manager (Phase 1)
 	initNetworkManager("data")
 	netMgr.Init()
+	// REQ-2 / T6: reconcile federation (and gossip) with the network_enabled
+	// single source of truth now that both managers are initialized.
+	netMgr.syncFederationToNetwork()
+	if gossip == nil {
+		initGossip()
+	}
 
 	// Phase 4: Region manager & Balance engine
 	initRegionManager()

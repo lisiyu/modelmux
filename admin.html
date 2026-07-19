@@ -641,15 +641,29 @@ select.form-input{appearance:none;cursor:pointer}
   </div>
   <div class="card" id="federationCard">
     <div class="card-title"><span class="icon">🌐</span> 共享网络 <span id="fedEnabledStatus" style="font-size:12px;font-weight:normal;margin-left:8px"></span></div>
-    <!-- 共享网络开关 -->
-    <div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:var(--bg-secondary);border-radius:10px;margin-bottom:16px">
+    <!-- 两级开关：network_enabled（是否入网）+ share_to_pool（是否共享剩余额度） -->
+    <!-- 开关一：加入共享网络（network_enabled） -->
+    <div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:var(--bg-secondary);border-radius:10px;margin-bottom:12px">
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600">🌐 加入共享网络</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">开启后，您的 Provider 将贡献到全网资源池，同时获得访问其他节点 Provider 的权限</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">开启后获得入网身份与全网资源访问权；可只入网不共享</div>
       </div>
       <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
-        <input type="checkbox" id="sharedNetworkToggle" onchange="toggleSharedNetwork()" style="opacity:0;width:0;height:0">
-        <span id="sharedNetworkToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+        <input type="checkbox" id="networkEnabledToggle" onchange="toggleNetworkEnabled()" style="opacity:0;width:0;height:0">
+        <span id="networkEnabledToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
+          <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
+        </span>
+      </label>
+    </div>
+    <!-- 开关二：共享剩余额度（share_to_pool，单向依赖 network_enabled） -->
+    <div id="shareToPoolRow" style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:rgba(108,99,255,.04);border:1px solid rgba(108,99,255,.15);border-radius:10px;margin-bottom:16px">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600">🔗 共享剩余额度</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">把剩余额度贡献到共享池（需先加入共享网络）</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+        <input type="checkbox" id="shareToPoolToggle" onchange="toggleShareToPool()" style="opacity:0;width:0;height:0">
+        <span id="shareToPoolToggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#555;border-radius:28px;transition:.3s">
           <span style="position:absolute;content:'';height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>
         </span>
       </label>

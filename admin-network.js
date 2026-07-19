@@ -7,7 +7,7 @@ async function loadNodeQuotaInfo() {
   try {
     const r = await authFetch('/api/network/status');
     const d = await r.json();
-    if (d.enabled) {
+    if (d.network_enabled) {
       const cp = d.contrib_points || 0;
       const quota = cp > 0 ? (cp * 10).toLocaleString() + ' tokens' : '需先积累贡献积分';
       el.innerHTML = '🌐 节点可用额度: ' + quota + ' <span style="margin-left:12px">📡 已广播到网络</span>';
@@ -163,17 +163,31 @@ let _shareFilter = 'all';
       const s = networkStatus;
       const isShared = s.mode === 'shared' || s.network_enabled;
       const panel = document.getElementById('networkActivePanel');
-      const toggle = document.getElementById('sharedNetworkToggle');
-      // Update the status badge to reflect actual shared network state (not federation)
+
+      // Status badge reflects the real shared-network state (not federation).
       const statusBadge = document.getElementById('fedEnabledStatus');
       if (statusBadge) {
         statusBadge.textContent = isShared ? '✅ 已加入' : '未加入';
         statusBadge.style.color = isShared ? 'var(--success)' : 'var(--text-muted)';
       }
+
+      // 两级开关：network_enabled / share_to_pool（REQ-3）
+      const netToggle = document.getElementById('networkEnabledToggle');
+      if (netToggle) {
+        netToggle.checked = isShared;
+        updateToggleSlider('networkEnabledToggle', 'networkEnabledToggleSlider', isShared);
+      }
+      const shareToggle = document.getElementById('shareToPoolToggle');
+      if (shareToggle) {
+        // share_to_pool 仅在 network_enabled=true 时可操作（单向依赖）。
+        shareToggle.checked = !!s.share_to_pool;
+        shareToggle.disabled = !isShared;
+        updateToggleSlider('shareToPoolToggle', 'shareToPoolToggleSlider', !!s.share_to_pool);
+        applyDisabledToggleStyle('shareToPoolToggleSlider', !isShared);
+      }
+
       if (isShared) {
         if (panel) panel.style.display = '';
-        if (toggle) toggle.checked = true;
-        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', true);
         setText('netNodeId', s.node_id || '-');
         setText('netUptime', formatUptime(s.uptime_seconds || 0));
         setText('netPeers', (s.peers_count || 0) + ' / ' + ((s.stats && s.stats.online_peers) || 0) + ' 在线');
@@ -185,8 +199,19 @@ let _shareFilter = 'all';
         loadNetworkDashboard();
       } else {
         if (panel) panel.style.display = 'none';
-        if (toggle) toggle.checked = false;
-        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', false);
+      }
+    }
+
+    // Grey out a toggle slider when its underlying control is disabled.
+    function applyDisabledToggleStyle(sliderId, disabled) {
+      const slider = document.getElementById(sliderId);
+      if (!slider) return;
+      if (disabled) {
+        slider.style.opacity = '0.45';
+        slider.style.cursor = 'not-allowed';
+      } else {
+        slider.style.opacity = '1';
+        slider.style.cursor = 'pointer';
       }
     }
 
@@ -328,11 +353,9 @@ let _shareFilter = 'all';
         const r2 = await authFetch('/api/network/enable', {method:'POST'});
         const d = await r2.json();
         if (!r2.ok) { toast(extractError(d) || '启用失败', 'error'); return; }
-        // Sync federation_enabled to stay consistent with network state
-        authFetch('/api/federation/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({federation_enabled:'true'})}).catch(()=>{});
-        // Update UI state
-        document.getElementById('sharedNetworkToggle').checked = true;
-        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', true);
+        // Update UI state (federation now follows network_enabled automatically)
+        document.getElementById('networkEnabledToggle').checked = true;
+        updateToggleSlider('networkEnabledToggle', 'networkEnabledToggleSlider', true);
         document.getElementById('quotaAllocation').style.display = 'block';
         
         closeNetworkDisclaimer();
@@ -354,8 +377,6 @@ let _shareFilter = 'all';
     async function disableNetwork() {
       if (!confirm('确定要退出共享网络吗？所有连接节点将被清除，回到个人模式。')) return;
       try {
-        // Sync federation_enabled off
-        authFetch('/api/federation/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({federation_enabled:'false'})}).catch(()=>{});
         const r = await authFetch('/api/network/disable', {method:'POST'});
         if (!r.ok) { toast('退出失败', 'error'); return; }
         toast('已退出共享网络，回到个人模式', 'success');
@@ -411,48 +432,95 @@ let _shareFilter = 'all';
     // ============================================================
     // ============================================================
     
-function toggleSharedNetwork() {
-  const enabled = document.getElementById('sharedNetworkToggle').checked;
-  if (enabled) {
-    // Reset the toggle until user confirms disclaimer
-    document.getElementById('sharedNetworkToggle').checked = false;
-    showNetworkDisclaimer();
-  } else {
-    // Disabling - show backup reminder with NodeID
-    const nodeId = (networkStatus && networkStatus.node_id) || '-';
-    const backupMsg = `⚠️ 退出共享网络提醒
+    // 开关一：network_enabled（是否入网）。开启前先做 REQ-4 入网前置校验。
+    async function toggleNetworkEnabled() {
+      const enabled = document.getElementById('networkEnabledToggle').checked;
+      if (enabled) {
+        // 先复位开关，待校验/引导通过后再置位
+        document.getElementById('networkEnabledToggle').checked = false;
+        updateToggleSlider('networkEnabledToggle', 'networkEnabledToggleSlider', false);
+        try {
+          const r = await authFetch('/api/network/join-conditions');
+          const d = await r.json();
+          if (!d.all_met) {
+            showJoinConditionGuidance(d);
+            return;
+          }
+        } catch (e) {
+          toast('入网条件校验失败: ' + e.message, 'error');
+          return;
+        }
+        // 条件满足 → 进入须知 → 同意 → enable 流程
+        showNetworkDisclaimer();
+      } else {
+        // 关闭：退出共享网络回到个人版
+        const nodeId = (networkStatus && networkStatus.node_id) || '-';
+        const backupMsg = `⚠️ 退出共享网络提醒
 您的节点身份信息将被清除：
 NodeID: ${nodeId}
 请备份以上 NodeID，重新加入时可用于恢复节点身份和贡献积分。
 确定要退出吗？`;
-    
-    if (!confirm(backupMsg)) {
-      document.getElementById('sharedNetworkToggle').checked = true;
-      return;
-    }
-    // Sync federation_enabled off before disabling network
-    authFetch('/api/federation/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({federation_enabled:'false'})}).catch(()=>{});
-    authFetch('/api/network/disable', {
-      method: 'POST'
-    }).then(r => {
-      if (r.ok) {
-        toast('已退出共享网络，回到个人模式', 'success');
-        updateToggleSlider('sharedNetworkToggle', 'sharedNetworkToggleSlider', false);
-        document.getElementById('quotaAllocation').style.display = 'none';
-        document.getElementById('networkActivePanel').style.display = 'none';
-        window._networkMode = 'personal';
-        if (typeof stopNetworkPolling === 'function') stopNetworkPolling();
-        loadNetworkStatus();
-      } else {
-        toast('退出失败', 'error');
-        document.getElementById('sharedNetworkToggle').checked = true;
+        if (!confirm(backupMsg)) {
+          document.getElementById('networkEnabledToggle').checked = true;
+          updateToggleSlider('networkEnabledToggle', 'networkEnabledToggleSlider', true);
+          return;
+        }
+        try {
+          const r = await authFetch('/api/network/disable', {method: 'POST'});
+          if (r.ok) {
+            toast('已退出共享网络，回到个人模式', 'success');
+            window._networkMode = 'personal';
+            if (typeof stopNetworkPolling === 'function') stopNetworkPolling();
+            await loadNetworkStatus();
+          } else {
+            toast('退出失败', 'error');
+            document.getElementById('networkEnabledToggle').checked = true;
+            updateToggleSlider('networkEnabledToggle', 'networkEnabledToggleSlider', true);
+          }
+        } catch (e) {
+          toast('操作失败: ' + e.message, 'error');
+          document.getElementById('networkEnabledToggle').checked = true;
+          updateToggleSlider('networkEnabledToggle', 'networkEnabledToggleSlider', true);
+        }
       }
-    }).catch(e => {
-      toast('操作失败: ' + e.message, 'error');
-      document.getElementById('sharedNetworkToggle').checked = true;
-    });
-  }
-}
+    }
+
+    // 开关二：share_to_pool（是否共享剩余额度）。单向依赖 network_enabled=true。
+    async function toggleShareToPool() {
+      const enabled = document.getElementById('shareToPoolToggle').checked;
+      updateToggleSlider('shareToPoolToggle', 'shareToPoolToggleSlider', enabled);
+      try {
+        const r = await authFetch('/api/network/toggle', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ share_to_pool: enabled, network_enabled: true })
+        });
+        if (r.ok) {
+          toast(enabled ? '已开始共享剩余额度' : '已停止共享额度', 'success');
+          await loadNetworkStatus();
+        } else {
+          const d = await r.json().catch(() => ({}));
+          toast(extractError(d) || '保存失败', 'error');
+          // revert UI
+          document.getElementById('shareToPoolToggle').checked = !enabled;
+          updateToggleSlider('shareToPoolToggle', 'shareToPoolToggleSlider', !enabled);
+        }
+      } catch (e) {
+        toast('操作失败: ' + e.message, 'error');
+        document.getElementById('shareToPoolToggle').checked = !enabled;
+        updateToggleSlider('shareToPoolToggle', 'shareToPoolToggleSlider', !enabled);
+      }
+    }
+
+    // REQ-4：缺任一入网条件时给出明确、非阻塞指引。
+    function showJoinConditionGuidance(d) {
+      const missing = [];
+      if (!d.has_provider) missing.push('配置至少一个 Provider Token');
+      if (!d.has_quota_manager) missing.push('在额度管理中开启额度管理');
+      if (!d.has_remaining) missing.push('本月仍有剩余额度（remaining_quota > 0）');
+      const msg = '尚不满足加入共享网络的条件，请先：\n• ' + missing.join('\n• ');
+      toast(msg, 'warning');
+    }
 
 async function saveQuotaAllocation() {
   const guestPercent = parseInt(document.getElementById('guestKeyPercentSlider').value, 10);
