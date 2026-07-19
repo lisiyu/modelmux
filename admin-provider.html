@@ -1077,9 +1077,9 @@ function initApiUrls() {
       if (domainHintEl) domainHintEl.textContent = '在下方绑定域名获得固定地址';
       if (domainBadgeEl) domainBadgeEl.textContent = '';
     }
-    // 4. 绑定引导卡片 - 只要有一个未绑定就显示
+    // 4. 绑定引导卡片 - 只有 IP 与域名都未绑定时才显示
     if (domainQuickCard) {
-      if (!boundIP || !tunnelDomain) {
+      if (!boundIP && !tunnelDomain) {
         domainQuickCard.style.display = 'block';
         if (boundIP && !tunnelDomain) switchBindMode('domain');
         if (!boundIP && tunnelDomain) switchBindMode('ip');
