@@ -17,8 +17,17 @@ $C = "Cyan"; $Y = "Yellow"; $G = "Green"; $R = "Red"; $W = "White"
 
 # 常量 - OMP
 $GITHUB_REPO = "lisiyu/openmodelpool"
-$RELEASE_TAG = "v4.0.5"
 $PKG = "openmodelpool-windows-amd64.exe"
+# 动态获取最新 Release tag（可通过环境变量 OMP_RELEASE_TAG 覆盖）
+$RELEASE_TAG = $env:OMP_RELEASE_TAG
+if (-not $RELEASE_TAG) {
+    try {
+        $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
+        $RELEASE_TAG = $releaseInfo.tag_name
+    } catch {
+        $RELEASE_TAG = "v4.0.5"  # fallback
+    }
+}
 $DOWNLOAD_URL = "https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/$PKG"
 $exeName = "openmodelpool.exe"
 $exePath = Join-Path $InstallDir $exeName
@@ -132,6 +141,7 @@ function Stop-All-Tunnels {
 # ============================================================
 function Install-OMP {
     Write-Title "OpenModelPool 全新安装"
+    Write-Info "目标版本: $RELEASE_TAG"
 
     if (Test-Path $exePath) {
         Write-Host "  检测到已有安装: $InstallDir" -ForegroundColor $Y
@@ -242,6 +252,7 @@ function Upgrade-OMP {
 
     $oldVersion = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm")
     Write-Info "当前版本时间: $oldVersion"
+    Write-Info "目标版本: $RELEASE_TAG"
 
     Write-Step 1 3 "下载最新版本..."
     $tmpExe = Join-Path $env:TEMP $PKG
