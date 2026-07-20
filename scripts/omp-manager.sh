@@ -13,6 +13,7 @@
 GITHUB_REPO="lisiyu/openmodelpool"
 XRAY_VERSION="v26.3.27"
 INSTALL_DIR="/opt/openmodelpool"
+BINARY_NAME="openmodelpool"
 PORT="8000"
 AUTO_UPDATE=false
 
@@ -38,6 +39,60 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+
+# ============================================================
+# 自动检测已有部署
+# ============================================================
+detect_deployment() {
+    # 1. 从 systemd 服务文件检测
+    if [ -f /etc/systemd/system/openmodelpool.service ]; then
+        local svc_exec=$(grep -oP 'ExecStart=\K.*' /etc/systemd/system/openmodelpool.service 2>/dev/null | head -1)
+        if [ -n "$svc_exec" ]; then
+            # 提取工作目录和二进制名
+            local svc_dir=$(grep -oP 'WorkingDirectory=\K.*' /etc/systemd/system/openmodelpool.service 2>/dev/null | head -1)
+            local base_name=$(basename "$svc_exec" 2>/dev/null)
+            # 如果 ExecStart 是 start.sh，尝试从中提取
+            if [ "$base_name" = "start.sh" ] && [ -n "$svc_dir" ] && [ -f "$svc_dir/start.sh" ]; then
+                local exec_line=$(grep -oP 'exec \./\K.*' "$svc_dir/start.sh" 2>/dev/null | head -1)
+                if [ -n "$exec_line" ]; then
+                    base_name=$(echo "$exec_line" | awk '{print $1}')
+                fi
+            fi
+            if [ -n "$svc_dir" ] && [ -d "$svc_dir" ]; then
+                INSTALL_DIR="$svc_dir"
+            fi
+            if [ -n "$base_name" ]; then
+                BINARY_NAME="$base_name"
+            fi
+            return 0
+        fi
+    fi
+
+    # 2. 检查常见部署目录
+    for dir in /opt/openmodelpool /root/modelmux-deploy /root/openmodelpool /usr/local/openmodelpool; do
+        if [ -d "$dir" ]; then
+            for bin in openmodelpool modelmux; do
+                if [ -f "$dir/$bin" ]; then
+                    INSTALL_DIR="$dir"
+                    BINARY_NAME="$bin"
+                    return 0
+                fi
+            done
+        fi
+    done
+
+    # 3. 从运行中的进程检测
+    local pid_bin=$(pgrep -f "openmodelpool|modelmux" 2>/dev/null | head -1)
+    if [ -n "$pid_bin" ]; then
+        local exe_path=$(readlink -f /proc/$pid_bin/exe 2>/dev/null)
+        if [ -n "$exe_path" ]; then
+            INSTALL_DIR=$(dirname "$exe_path")
+            BINARY_NAME=$(basename "$exe_path")
+            return 0
+        fi
+    fi
+}
 
 # ============================================================
 # 工具函数
@@ -186,9 +241,9 @@ except: pass
                         write_err "unzip 解压失败"; return 1; } ;;
             esac
             # 查找可执行文件
-            OMP_BINARY_PATH=$(find "$extract_dir" -name "openmodelpool*" -type f ! -name "*.sha256" ! -name "*.txt" 2>/dev/null | head -1)
+            OMP_BINARY_PATH=$(find "$extract_dir" -name "openmodelpool*" -o -name "modelmux*" -type f ! -name "*.sha256" ! -name "*.txt" 2>/dev/null | head -1)
             if [ -z "$OMP_BINARY_PATH" ] || [ ! -f "$OMP_BINARY_PATH" ]; then
-                write_err "解压后未找到 openmodelpool 可执行文件"
+                write_err "解压后未找到可执行文件"
                 return 1
             fi
             write_ok "已从压缩包提取二进制"
@@ -215,7 +270,7 @@ stop_omp() {
     elif [ -f /usr/local/etc/rc.d/openmodelpool.sh ]; then
         /usr/local/etc/rc.d/openmodelpool.sh stop 2>/dev/null || true
     else
-        pkill -f "$INSTALL_DIR/openmodelpool" 2>/dev/null || true
+        pkill -f "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
     fi
 }
 
@@ -226,7 +281,7 @@ start_omp() {
     elif [ -f /usr/local/etc/rc.d/openmodelpool.sh ]; then
         /usr/local/etc/rc.d/openmodelpool.sh start
     else
-        cd "$INSTALL_DIR" && nohup ./openmodelpool >> data/app.log 2>&1 &
+        cd "$INSTALL_DIR" && nohup ./$BINARY_NAME >> data/app.log 2>&1 &
     fi
 }
 
@@ -248,7 +303,7 @@ stop_all_tunnels() {
 install_omp() {
     write_title "OpenModelPool 全新安装"
 
-    if [ -f "$INSTALL_DIR/openmodelpool" ]; then
+    if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
         write_info "检测到已有安装: $INSTALL_DIR"
         read -p "  是否覆盖安装？[y/N] " confirm < /dev/tty
         if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
@@ -259,6 +314,7 @@ install_omp() {
 
     detect_arch || return 1
     detect_system
+detect_deployment
 
     RELEASE_TAG=$(get_release_tag) || return 1
     write_info "目标版本: $RELEASE_TAG"
@@ -281,8 +337,8 @@ install_omp() {
     # 安装
     write_step 4 7 "安装到 $INSTALL_DIR ..."
     mkdir -p "$INSTALL_DIR/data"
-    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/openmodelpool"
-    chmod +x "$INSTALL_DIR/openmodelpool"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
+    chmod +x "$INSTALL_DIR/$BINARY_NAME"
     write_ok "安装完成"
 
     # 安装 Xray
@@ -321,7 +377,7 @@ install_omp() {
     start_omp
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null 2>&1; then
+    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
         NAS_IP=$(ip addr show | grep -oP 'inet \K[0-9.]+' | grep -v '127.0.0.1' | head -1)
         echo ""
         echo -e "${GREEN}  ╔══════════════════════════════════════════╗${NC}"
@@ -415,14 +471,14 @@ setup_service() {
 #!/bin/bash
 cd "$INSTALL_DIR"
 export PORT="$PORT"
-exec ./openmodelpool >> "$INSTALL_DIR/data/app.log" 2>&1
+exec ./$BINARY_NAME >> "$INSTALL_DIR/data/app.log" 2>&1
 EOF
     chmod +x "$INSTALL_DIR/start.sh"
 
     cat > "$INSTALL_DIR/stop.sh" << 'EOF'
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
-PIDS=$(pgrep -f "$DIR/openmodelpool")
+PIDS=$(pgrep -f "$DIR/$BINARY_NAME")
 if [ -n "$PIDS" ]; then
   kill $PIDS && echo "已停止 (PID: $PIDS)"
 else
@@ -440,7 +496,7 @@ case "\$1" in
   start)  su root -c "$INSTALL_DIR/start.sh &" ;;
   stop)   $INSTALL_DIR/stop.sh ;;
   restart) \$0 stop; sleep 2; \$0 start ;;
-  status) pgrep -f "$INSTALL_DIR/openmodelpool" && echo "运行中" || echo "未运行" ;;
+  status) pgrep -f "$INSTALL_DIR/$BINARY_NAME" && echo "运行中" || echo "未运行" ;;
   *) echo "Usage: \$0 {start|stop|restart|status}"; exit 1 ;;
 esac
 exit 0
@@ -479,8 +535,8 @@ EOF
 upgrade_omp() {
     write_title "OpenModelPool 增量升级"
 
-    if [ ! -f "$INSTALL_DIR/openmodelpool" ]; then
-        write_err "未检测到安装: $INSTALL_DIR/openmodelpool"
+    if [ ! -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+        write_err "未检测到安装: $INSTALL_DIR/$BINARY_NAME"
         return
     fi
 
@@ -502,8 +558,8 @@ upgrade_omp() {
     write_step 3 5 "资产就绪"
 
     write_step 4 5 "替换二进制..."
-    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/openmodelpool"
-    chmod +x "$INSTALL_DIR/openmodelpool"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
+    chmod +x "$INSTALL_DIR/$BINARY_NAME"
     write_ok "替换完成"
 
     # 检查 Xray
@@ -532,7 +588,7 @@ upgrade_omp() {
     start_omp
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null 2>&1; then
+    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
         write_ok "升级成功！数据已保留。"
     else
         write_err "启动失败，请检查日志: $INSTALL_DIR/data/app.log"
@@ -546,7 +602,7 @@ uninstall_omp() {
     write_title "OpenModelPool 卸载"
 
     write_info "将删除以下内容："
-    echo -e "    - 二进制: $INSTALL_DIR/openmodelpool"
+    echo -e "    - 二进制: $INSTALL_DIR/$BINARY_NAME"
     echo -e "    - Xray:   $INSTALL_DIR/xray/"
     echo -e "    - 脚本:   $INSTALL_DIR/*.sh"
     echo -e "    - 服务:   systemd / rc.d"
@@ -580,7 +636,7 @@ uninstall_omp() {
     write_ok "已移除"
 
     write_step 3 4 "删除文件..."
-    rm -f "$INSTALL_DIR/openmodelpool"
+    rm -f "$INSTALL_DIR/$BINARY_NAME"
     rm -f "$INSTALL_DIR/start.sh" "$INSTALL_DIR/stop.sh" "$INSTALL_DIR/status.sh"
     rm -rf "$INSTALL_DIR/xray"
     write_ok "已删除"
@@ -1118,7 +1174,7 @@ change_port() {
 #!/bin/bash
 cd "$INSTALL_DIR"
 export PORT="$NEW_PORT"
-exec ./openmodelpool >> "$INSTALL_DIR/data/app.log" 2>&1
+exec ./$BINARY_NAME >> "$INSTALL_DIR/data/app.log" 2>&1
 EOF
     chmod +x "$INSTALL_DIR/start.sh"
 
@@ -1164,7 +1220,7 @@ EOF
     start_omp
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null 2>&1; then
+    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
         write_ok "端口已修改为 $NEW_PORT，服务已重启"
         NAS_IP=$(ip addr show | grep -oP 'inet \K[0-9.]+' | grep -v '127.0.0.1' | head -1)
         echo -e "  管理面板: ${CYAN}http://${NAS_IP}:${NEW_PORT}/admin${NC}"
@@ -1181,8 +1237,8 @@ show_status() {
 
     echo ""
     echo -e "  ${CYAN}── OMP 服务 ──${NC}"
-    if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null 2>&1; then
-        PID=$(pgrep -f "$INSTALL_DIR/openmodelpool" | head -1)
+    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
+        PID=$(pgrep -f "$INSTALL_DIR/$BINARY_NAME" | head -1)
         write_ok "OMP 运行中 (PID: $PID)"
     else
         write_err "OMP 未运行"
@@ -1191,8 +1247,8 @@ show_status() {
     echo -e "  端口: $PORT"
 
     # 版本
-    if [ -f "$INSTALL_DIR/openmodelpool" ]; then
-        echo -e "  二进制: $(ls -lh $INSTALL_DIR/openmodelpool | awk '{print $5, $6, $7, $8}')"
+    if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+        echo -e "  二进制: $(ls -lh $INSTALL_DIR/$BINARY_NAME | awk '{print $5, $6, $7, $8}')"
     fi
 
     # Xray
@@ -1281,7 +1337,7 @@ restart_all() {
     sleep 2
     start_omp
     sleep 3
-    if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null 2>&1; then
+    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
         write_ok "OMP 已启动"
     else
         write_err "OMP 启动失败"
@@ -1382,7 +1438,7 @@ auto_update() {
     detect_arch || exit 1
 
     # 备份
-    cp "$INSTALL_DIR/openmodelpool" "$INSTALL_DIR/openmodelpool.bak" 2>/dev/null || true
+    cp "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/${BINARY_NAME}.bak" 2>/dev/null || true
 
     # 停止服务
     stop_omp 2>/dev/null || true
@@ -1397,18 +1453,18 @@ auto_update() {
     fi
 
     # 替换
-    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/openmodelpool"
-    chmod +x "$INSTALL_DIR/openmodelpool"
+    cp "$OMP_BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
+    chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
     # 启动
     start_omp 2>/dev/null || true
     sleep 3
 
-    if pgrep -f "$INSTALL_DIR/openmodelpool" >/dev/null 2>&1; then
+    if pgrep -f "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
         echo "[$(date)] ✅ 自动更新成功: $LATEST_TAG" >> "$LOG_FILE"
     else
         echo "[$(date)] ❌ 启动失败，回滚..." >> "$LOG_FILE"
-        cp "$INSTALL_DIR/openmodelpool.bak" "$INSTALL_DIR/openmodelpool" 2>/dev/null || true
+        cp "$INSTALL_DIR/${BINARY_NAME}.bak" "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
         start_omp 2>/dev/null || true
         echo "[$(date)] 已回滚" >> "$LOG_FILE"
     fi
@@ -1426,6 +1482,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 detect_system
+detect_deployment
 
 while true; do
     echo ""
