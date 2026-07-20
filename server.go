@@ -71,6 +71,8 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /v1/chat/completions", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
 	mux.HandleFunc("POST /v1/completions", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
 	mux.HandleFunc("POST /v1/embeddings", withProxyAuth(rateLimitMiddleware(handleGatewayRequest)))
+	// Anthropic Messages API compatibility — for Claude Code and other Anthropic clients
+	mux.HandleFunc("POST /v1/messages", anthropicAuthAdapter(withProxyAuth(rateLimitMiddleware(handleAnthropicMessages))))
 
 	// Seed discovery endpoints (public, no auth required)
 	mux.HandleFunc("GET /api/peers", handleSeedPeers)
@@ -167,7 +169,6 @@ func setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/domain/bind", rateLimitByIP(3, "domain_bind")(withAuth(handleBindDomain)))
 	mux.HandleFunc("GET /api/domain/status", withAuth(handleGetDomainStatus))
 	mux.HandleFunc("POST /api/domain/unbind", rateLimitByIP(3, "domain_unbind")(withAuth(handleUnbindDomain)))
-	mux.HandleFunc("POST /api/domain/manual-bind", rateLimitByIP(3, "domain_manual_bind")(withAuth(handleManualDomainBind)))
 
 	// IP binding
 	mux.HandleFunc("POST /api/ip/bind", withAuth(handleBindIP))
