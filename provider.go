@@ -367,7 +367,7 @@ func (m *ProviderManager) Delete(id string) bool {
 // Enabled returns all enabled providers.
 func (m *ProviderManager) Enabled() []Provider {
 	var out []Provider
-	for _, p := range m.GetAll() {
+	for _, p := range m.GetAllRaw() {
 		if p.Enabled {
 			out = append(out, p)
 		}
@@ -487,7 +487,7 @@ func FilterByAccessControl(cands []candidate, keyType string) []candidate {
 // FindCandidates returns all enabled providers that have the given model.
 func (m *ProviderManager) FindCandidates(model string) []candidate {
 	var out []candidate
-	for _, p := range m.GetAll() {
+	for _, p := range m.GetAllRaw() {
 		if !p.Enabled {
 			continue
 		}
@@ -720,7 +720,7 @@ func (m *ProviderManager) AllModels() []ModelInfo {
 	seen := make(map[string]bool)
 	var models []ModelInfo
 
-	for _, p := range m.GetAll() {
+	for _, p := range m.GetAllRaw() {
 		if !p.Enabled {
 			continue
 		}
@@ -768,7 +768,7 @@ func (m *ProviderManager) AllModelsFiltered(keyType string) []ModelInfo {
 	seen := make(map[string]bool)
 	var models []ModelInfo
 
-	for _, p := range m.GetAll() {
+	for _, p := range m.GetAllRaw() {
 		if !p.Enabled {
 			continue
 		}
