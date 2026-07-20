@@ -342,6 +342,39 @@ irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-man
 
 Both Linux and Windows manager scripts provide an interactive menu: install / upgrade / uninstall / tunnel setup (Cloudflare / FRP / ngrok) / port change / status check / restart — all in one.
 
+### Individual Scripts
+
+Prefer a single-function script? All scripts support dynamic release detection (compatible with both raw binary and archive assets across all versions):
+
+<details>
+<summary>📦 Linux / macOS</summary>
+
+| Script | Function | Command |
+|--------|----------|---------|
+| `omp-manager.sh` | Full menu (install/upgrade/uninstall/tunnel/port/status/restart) | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" \| sudo bash` |
+| `omp-deploy.sh` | Install only | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh?t=$(date +%s)" \| sudo bash` |
+| `omp-update.sh` | Upgrade only | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-update.sh?t=$(date +%s)" \| sudo bash` |
+| `auto-update.sh` | Auto-update (cron) | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/auto-update.sh?t=$(date +%s)" \| sudo bash` |
+| `omp-tunnel.sh` | Tunnel setup only (Cloudflare / FRP) | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.sh?t=$(date +%s)" \| sudo bash` |
+
+</details>
+
+<details>
+<summary>🖥️ Windows (PowerShell as Admin)</summary>
+
+| Script | Function | Command |
+|--------|----------|---------|
+| `omp-manager.ps1` | Full menu (install/upgrade/uninstall/tunnel/port/status/restart) | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+| `omp-deploy.ps1` | Install only | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+| `omp-update.ps1` | Upgrade only | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-update.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+| `auto-update.ps1` | Auto-update (Task Scheduler) | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/auto-update.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+| `omp-tunnel.ps1` | Tunnel setup only (Cloudflare / FRP / ngrok) | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+| `omp-tunnel-reset.ps1` | Reset tunnel config | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel-reset.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+
+</details>
+
+> All scripts dynamically fetch the latest GitHub Release tag (override with `OMP_RELEASE_TAG=v4.0.5`) and automatically detect asset format (raw binary or archive) for cross-version compatibility.
+
 ### Build from Source
 
 ```bash
