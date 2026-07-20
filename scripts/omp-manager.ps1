@@ -3,11 +3,13 @@
 #  集成：安装 / 升级 / 卸载 / 穿透配置(CF/FRP/ngrok) / 端口修改 / 状态查看 / 重启
 #
 #  用法 (管理员 PowerShell):
-#    irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1 | iex
+#    交互菜单:  irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
+#    自动更新:  irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex -- -AutoUpdate
 # ============================================================
 param(
     [string]$InstallDir = "C:\openmodelpool",
-    [int]$Port = 8000
+    [int]$Port = 8000,
+    [switch]$AutoUpdate
 )
 
 $ErrorActionPreference = "Continue"
@@ -1247,7 +1249,114 @@ if (-not (Test-Admin)) {
     exit 1
 }
 
+
+# ============================================================
+# 无人值守自动更新（用于 Windows 计划任务）
+# ============================================================
+function Auto-Update {
+    $logFile = Join-Path $dataDir "auto-update.log"
+    if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Force -Path $dataDir | Out-Null }
+
+    function Write-AULog {
+        param([string]$msg)
+        $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $line = "[$ts] $msg"
+        Add-Content -Path $logFile -Value $line -ErrorAction SilentlyContinue
+    }
+
+    function Normalize-Ver {
+        param([string]$v)
+        $v = $v -replace '^v', ''
+        $v = $v -replace '-release$', ''
+        $v = $v -replace '-.*$', ''
+        $v = $v -replace '\+.*$', ''
+        return $v
+    }
+
+    Write-AULog "==== OpenModelPool 自动更新检查 ===="
+
+    # 当前版本
+    $curVer = ""
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:$Port/api/version" -UseBasicParsing -TimeoutSec 5
+        $curVer = $resp.version
+    } catch {
+        Write-AULog "无法获取当前版本（服务可能未运行），继续检查..."
+    }
+
+    # 最新版本
+    $latestTag = $env:OMP_RELEASE_TAG
+    if (-not $latestTag) {
+        try {
+            $ri = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest" -UseBasicParsing
+            $latestTag = $ri.tag_name
+        } catch {
+            Write-AULog "无法获取最新 Release tag"
+            exit 1
+        }
+    }
+
+    Write-AULog "当前版本: $curVer | 最新: $latestTag"
+
+    $curN = Normalize-Ver -v $curVer
+    $latN = Normalize-Ver -v $latestTag
+
+    if ($curN -eq $latN) {
+        Write-AULog "已是最新版本，跳过"
+        exit 0
+    }
+
+    Write-AULog "发现新版本，开始更新..."
+
+    # 下载
+    $tmpDir = Join-Path $env:TEMP "omp-auto-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    $dlExe = Download-OMPRelease -Tag $latestTag -TmpDir $tmpDir
+    if (-not $dlExe) {
+        Write-AULog "下载失败"
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
+
+    # 备份
+    $bakPath = Join-Path $InstallDir "openmodelpool.exe.bak"
+    if (Test-Path $exePath) { Copy-Item $exePath -Destination $bakPath -Force }
+
+    # 停止
+    Write-AULog "停止服务..."
+    Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+
+    # 替换
+    Copy-Item $dlExe -Destination $exePath -Force
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    # 启动
+    Write-AULog "启动服务..."
+    Start-OMP
+    Start-Sleep -Seconds 3
+
+    $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
+    if ($proc) {
+        Write-AULog "✅ 自动更新成功: $latestTag"
+    } else {
+        Write-AULog "❌ 启动失败，回滚..."
+        if (Test-Path $bakPath) {
+            Copy-Item $bakPath -Destination $exePath -Force
+            Start-OMP
+            Write-AULog "已回滚"
+        }
+    }
+    Write-AULog "更新流程结束"
+}
+
 while ($true) {
+    # 无人值守模式
+    if ($AutoUpdate) {
+        Auto-Update
+        exit 0
+    }
+
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor $C
     Write-Host "       OpenModelPool 全功能管理工具" -ForegroundColor $C
