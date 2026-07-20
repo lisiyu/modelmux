@@ -325,13 +325,13 @@ OpenModelPool Agent evolves from a lightweight personal AI proxy into a **decent
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh | sudo bash
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
 ```
 
 Custom parameters:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh | sudo bash -s -- /opt/openmodelpool 9090
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash -s -- /opt/openmodelpool 9090
 ```
 
 **Windows (PowerShell as Admin):**
