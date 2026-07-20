@@ -1,296 +1,303 @@
 # OpenModelPool 部署指南
 
-> **版本**: v3.2.1 | **更新日期**: 2026-07-18
+> **版本**: v4.0.5 | **更新日期**: 2026-07-20
 
 ---
 
 ## 目录
 
-1. [安装](#1-安装)
-   - [Linux](#11-linux)
-   - [群晖 NAS](#12-群晖-nas)
-   - [Windows](#13-windows)
-2. [卸载](#2-卸载)
+1. [快速开始](#1-快速开始)
+2. [安装](#2-安装)
    - [Linux](#21-linux)
    - [群晖 NAS](#22-群晖-nas)
    - [Windows](#23-windows)
-3. [更新/升级](#3-更新升级)
-4. [常见问题](#4-常见问题)
+   - [macOS](#24-macos)
+3. [升级](#3-升级)
+4. [自动更新](#4-自动更新)
+5. [卸载](#5-卸载)
+6. [外网穿透配置](#6-外网穿透配置)
+7. [常见问题](#7-常见问题)
 
 ---
 
-## 1. 安装
+## 1. 快速开始
 
-### 1.1 Linux
+OpenModelPool 提供全功能管理脚本，一条命令即可完成安装、升级、卸载、穿透配置等所有操作：
+
+| 平台 | 命令 |
+|------|------|
+| **Linux / 群晖** | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" \| sudo bash` |
+| **Windows** | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
+
+运行后进入交互菜单：
+
+```
+  ╔══════════════════════════════════════════╗
+  ║       OpenModelPool 全功能管理工具        ║
+  ╚══════════════════════════════════════════╝
+    1. 安装          全新安装 OMP
+    2. 升级          增量更新 (保留配置)
+    3. 卸载          彻底删除所有组件
+    4. 配置穿透      Cloudflare / FRP / ngrok
+    5. 重置穿透      选择重置任一/全部隧道
+    6. 修改端口      更换 OMP 服务端口
+    7. 查看状态      检查所有组件运行情况
+    8. 重启服务      重启 OMP + 所有隧道
+    0. 退出
+```
+
+---
+
+## 2. 安装
+
+### 2.1 Linux
 
 **一键安装（推荐）：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh | sudo bash
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
 ```
 
-自定义端口和安装目录：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh | sudo bash -s -- /opt/openmodelpool 9090
-```
-
-安装脚本会自动：
+选择菜单 **1. 安装**，脚本会自动：
 - 检测系统架构（x86_64 / ARM64 / ARMv7）
-- 从 GitHub Release 下载对应二进制
-- 创建安装目录和数据目录
+- 从 GitHub Release 动态获取最新版本并下载对应二进制
+- SHA256 校验确保文件完整性
+- 创建安装目录（默认 `/opt/openmodelpool`）和数据目录
 - 配置 systemd 开机自启服务
 - 启动服务
+
+**自定义端口和安装目录：**
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash -s -- --install-dir /opt/openmodelpool --port 9090
+```
 
 **手动安装：**
 
 ```bash
-# 下载二进制
-wget https://github.com/lisiyu/openmodelpool/releases/download/v3.2.1-release/openmodelpool-linux-amd64.tar.gz
-tar xzf openmodelpool-linux-amd64.tar.gz
+# 获取最新 Release 版本号
+TAG=$(curl -s https://api.github.com/repos/lisiyu/openmodelpool/releases/latest | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])')
+
+# 下载二进制 + SHA256 校验
+wget "https://github.com/lisiyu/openmodelpool/releases/download/${TAG}/openmodelpool-linux-amd64"
+wget "https://github.com/lisiyu/openmodelpool/releases/download/${TAG}/openmodelpool-linux-amd64.sha256"
+sha256sum -c openmodelpool-linux-amd64.sha256
 
 # 安装
-sudo mkdir -p /opt/openmodelpool
-sudo cp openmodelpool /opt/openmodelpool/
+sudo mkdir -p /opt/openmodelpool/data
+sudo cp openmodelpool-linux-amd64 /opt/openmodelpool/openmodelpool
+sudo chmod +x /opt/openmodelpool/openmodelpool
 cd /opt/openmodelpool
-sudo mkdir -p data
-
-# 启动
 sudo ./openmodelpool &
 ```
 
-### 1.2 群晖 NAS
+支持的平台二进制：
 
-群晖 NAS 使用与 Linux 相同的部署脚本，脚本会自动检测群晖 DSM 系统并使用 rc.d 方式配置开机自启。
+| 平台 | 文件名 |
+|------|--------|
+| Linux x86_64 | `openmodelpool-linux-amd64` |
+| Linux ARM64 | `openmodelpool-linux-arm64` |
+| Linux ARMv7 | `openmodelpool-linux-armv7` |
+| Windows x86_64 | `openmodelpool-windows-amd64.exe` |
+| macOS Intel | `openmodelpool-darwin-amd64` |
+| macOS Apple Silicon | `openmodelpool-darwin-arm64` |
 
-**一键安装：**
+### 2.2 群晖 NAS
+
+管理脚本自动检测群晖 DSM 系统，使用 rc.d 方式配置开机自启，默认安装路径 `/volume1/@appstore/openmodelpool`。
 
 通过 SSH 登录群晖后执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh | sudo bash
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
 ```
 
 > **注意**：群晖需在 DSM 控制面板 → 终端机和 SNMP 中启用 SSH 服务。
 
-### 1.3 Windows
+### 2.3 Windows
 
 **一键安装（推荐）：**
 
 以**管理员身份**打开 PowerShell，执行：
 
 ```powershell
-irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.ps1 | iex
+irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
 ```
 
-自定义安装目录和端口：
+选择菜单 **1. 安装**，脚本会自动：
+- 从 GitHub Release 动态获取最新版本并下载 Windows 二进制
+- SHA256 校验确保文件完整性
+- 停止并清理旧版本（计划任务 / 残留进程）
+- 创建安装目录（默认 `C:\openmodelpool`）和数据目录
+- 配置计划任务实现开机自启
+- 启动服务
+
+**自定义安装目录和端口：**
 
 ```powershell
-& .\omp-deploy.ps1 -InstallDir "D:\openmodelpool" -Port 9090
+# 先下载脚本
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1" -OutFile omp-manager.ps1
+# 指定参数运行
+.\omp-manager.ps1 -InstallDir "D:\openmodelpool" -Port 9090
 ```
-
-安装脚本会自动：
-- 从 GitHub Release 下载 Windows 二进制
-- 停止并清理旧版本（NSSM 服务 / 计划任务 / 残留进程）
-- 创建安装目录和数据目录
-- 配置开机自启（优先使用 NSSM 系统服务，未安装则使用计划任务）
-- 启动服务
 
 **手动安装：**
 
-1. 下载 `openmodelpool-windows-amd64.zip`
-2. 解压到目标目录（如 `C:\openmodelpool`）
-3. 打开 CMD/PowerShell，进入安装目录
-4. 运行 `openmodelpool.exe`
+1. 从 [Releases](https://github.com/lisiyu/openmodelpool/releases/latest) 下载 `openmodelpool-windows-amd64.exe`
+2. 放置到目标目录（如 `C:\openmodelpool`），重命名为 `openmodelpool.exe`
+3. 创建 `data` 子目录
+4. 打开 CMD/PowerShell，进入安装目录，运行 `openmodelpool.exe`
+
+### 2.4 macOS
+
+```bash
+# 获取最新 Release 版本号
+TAG=$(curl -s https://api.github.com/repos/lisiyu/openmodelpool/releases/latest | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])')
+
+# Apple Silicon (M1/M2/M3/M4)
+curl -fsSL "https://github.com/lisiyu/openmodelpool/releases/download/${TAG}/openmodelpool-darwin-arm64" -o openmodelpool
+# Intel Mac
+# curl -fsSL "https://github.com/lisiyu/openmodelpool/releases/download/${TAG}/openmodelpool-darwin-amd64" -o openmodelpool
+
+chmod +x openmodelpool
+mkdir -p data
+./openmodelpool &
+```
 
 ---
 
-## 2. 卸载
+## 3. 升级
 
-### 2.1 Linux
-
-```bash
-# 1. 停止服务
-sudo systemctl stop openmodelpool 2>/dev/null
-
-# 2. 禁用开机自启
-sudo systemctl disable openmodelpool 2>/dev/null
-
-# 3. 删除服务文件
-sudo rm -f /etc/systemd/system/openmodelpool.service
-sudo systemctl daemon-reload
-
-# 4. 杀掉残留进程
-sudo pkill -f openmodelpool 2>/dev/null
-
-# 5. 删除安装目录（含数据）
-sudo rm -rf /opt/openmodelpool
-
-echo "卸载完成"
-```
-
-> **提示**：默认安装目录为 `/opt/openmodelpool`，如自定义了目录请相应修改。
-
-### 2.2 群晖 NAS
-
-```bash
-# 1. 停止服务
-sudo /usr/local/etc/rc.d/openmodelpool.sh stop 2>/dev/null
-
-# 2. 删除开机自启脚本
-sudo rm -f /usr/local/etc/rc.d/openmodelpool.sh
-
-# 3. 杀掉残留进程
-sudo pkill -f openmodelpool 2>/dev/null
-
-# 4. 删除安装目录（含数据）
-sudo rm -rf /opt/openmodelpool
-
-echo "卸载完成"
-```
-
-### 2.3 Windows
-
-以**管理员身份**打开 PowerShell，执行以下命令：
-
-```powershell
-# 1. 停止并删除 NSSM 服务（如果有）
-$svc = Get-Service -Name "openmodelpool" -ErrorAction SilentlyContinue
-if ($svc) {
-    nssm stop openmodelpool 2>$null
-    nssm remove openmodelpool confirm 2>$null
-    Write-Host "NSSM 服务已删除" -ForegroundColor Green
-}
-
-# 2. 停止并删除计划任务（如果有）
-$task = Get-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
-if ($task) {
-    Stop-ScheduledTask -TaskName "OpenModelPool" 2>$null
-    Unregister-ScheduledTask -TaskName "OpenModelPool" -Confirm:$false
-    Write-Host "计划任务已删除" -ForegroundColor Green
-}
-
-# 3. 杀掉残留进程
-Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force
-Write-Host "进程已终止" -ForegroundColor Green
-
-# 4. 删除安装目录（含数据）
-$installDir = "C:\openmodelpool"
-if (Test-Path $installDir) {
-    Remove-Item $installDir -Recurse -Force
-    Write-Host "安装目录已删除: $installDir" -ForegroundColor Green
-}
-
-Write-Host "`n卸载完成！" -ForegroundColor Cyan
-```
-
-> **提示**：默认安装目录为 `C:\openmodelpool`，如自定义了目录请相应修改。
-
----
-
-## 3. 更新/升级
-
-更新流程：**卸载旧版本 → 安装新版本**。
-
-数据目录（`data/`）在卸载时会被删除。如需保留配置和数据，在卸载前备份 `data` 目录：
+使用管理脚本的 **增量更新** 功能，保留所有配置和数据，仅替换二进制文件。
 
 **Linux / 群晖：**
+
 ```bash
-cp -r /opt/openmodelpool/data /tmp/omp-data-backup
-# 卸载后重新安装，再恢复
-cp -r /tmp/omp-data-backup /opt/openmodelpool/data
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
+# 选择菜单 2. 升级
 ```
 
 **Windows：**
+
 ```powershell
-Copy-Item -Recurse "C:\openmodelpool\data" "C:\omp-data-backup"
-# 卸载后重新安装，再恢复
-Copy-Item -Recurse "C:\omp-data-backup" "C:\openmodelpool\data"
+irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
+# 选择菜单 2. 升级
 ```
 
-> **注意**：从 v3.2.1 开始，HTML 文件已嵌入二进制，不再需要单独的 HTML 文件。升级时只需替换二进制即可。
+升级流程：
+1. 动态获取 GitHub 最新 Release 版本
+2. 下载对应平台二进制 + SHA256 校验
+3. 备份当前二进制（`.bak`）
+4. 停止服务 → 替换二进制 → 启动服务
+5. 启动失败自动回滚
+
+> **注意**：HTML 文件已嵌入二进制，升级只需替换二进制文件，无需处理其他文件。
 
 ---
 
-## 4. 常见问题
+## 4. 自动更新
 
-### Q: 安装后访问页面显示 404？
+通过 cron（Linux）或计划任务（Windows）实现无人值守自动更新。
 
-**A:** v3.2.1 已修复此问题。HTML 文件已嵌入二进制内部，不再依赖外部文件。请确保使用 v3.2.1 或更高版本。如仍有问题，请检查：
-- 服务是否正常启动（查看日志）
-- 端口是否被占用
-- 是否有防火墙拦截
+### Linux
 
-### Q: 端口被占用怎么办？
-
-**Linux:**
 ```bash
-# 查看端口占用
-sudo lsof -i :8000
-# 杀掉占用进程
-sudo kill -9 <PID>
+# 编辑 crontab
+sudo crontab -e
+
+# 添加每天凌晨 4 点自动检查更新
+0 4 * * * curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +\%s)" | bash -s -- --auto-update >> /tmp/omp-auto-update.log 2>&1
 ```
-
-**Windows:**
-```powershell
-# 查看端口占用
-Get-NetTCPConnection -LocalPort 8000
-# 杀掉占用进程
-Stop-Process -Id <PID> -Force
-```
-
-### Q: 如何查看日志？
-
-**Linux:**
-```bash
-# systemd 日志
-journalctl -u openmodelpool -f
-# 或应用日志
-tail -f /opt/openmodelpool/data/app.log
-```
-
-**Windows:**
-```powershell
-Get-Content C:\openmodelpool\data\app.log -Tail 50 -Wait
-```
-
-### Q: 如何修改端口？
-
-**方法一**：重新安装时指定端口
-
-**方法二**：修改配置文件 `data/config.json` 中的 `service_port` 字段，然后重启服务。
-
-### Q: 群晖 NAS 安装后无法访问？
-
-**A:** 请检查：
-1. DSM 防火墙是否放行了对应端口（控制面板 → 安全性 → 防火墙）
-2. DSM 控制面板 → 登录门户 → 高级 → 反向代理，可配置反向代理
-3. SSH 登录后执行 `ps aux | grep openmodelpool` 确认进程正在运行
-
----
-
-## 外网穿透配置
-
-安装完成后，部署脚本会自动询问是否配置外网穿透。也可以随时单独运行配置：
 
 ### Windows
+
 ```powershell
-irm https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.ps1 | iex
+# 创建计划任务（管理员 PowerShell）
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -Command `"irm 'https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1' | iex -- -AutoUpdate`""
+$trigger = New-ScheduledTaskTrigger -Daily -At "04:00"
+Register-ScheduledTask -TaskName "OpenModelPool-AutoUpdate" -Action $action -Trigger $trigger -RunLevel Highest
 ```
 
-### Linux / 群晖
+自动更新日志位置：
+- Linux: `/tmp/omp-auto-update.log`
+- Windows: `C:\openmodelpool\data\auto-update.log`
+
+---
+
+## 5. 卸载
+
+使用管理脚本的 **卸载** 功能，彻底删除所有组件：
+
+**Linux / 群晖：**
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.sh | sudo bash
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
+# 选择菜单 3. 卸载
 ```
+
+**Windows：**
+
+```powershell
+irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
+# 选择菜单 3. 卸载
+```
+
+卸载会自动清理：
+- OMP 二进制和安装目录
+- systemd 服务 / 计划任务 / rc.d 脚本
+- cloudflared / frpc / ngrok 相关配置和进程
+- 所有隧道服务
+
+**手动卸载（Linux）：**
+
+```bash
+sudo systemctl stop openmodelpool 2>/dev/null
+sudo systemctl disable openmodelpool 2>/dev/null
+sudo rm -f /etc/systemd/system/openmodelpool.service
+sudo systemctl daemon-reload
+sudo pkill -f openmodelpool 2>/dev/null
+sudo rm -rf /opt/openmodelpool
+```
+
+**手动卸载（Windows）：**
+
+```powershell
+Stop-ScheduledTask -TaskName "OpenModelPool" -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "OpenModelPool" -Confirm:$false -ErrorAction SilentlyContinue
+Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force
+Remove-Item "C:\openmodelpool" -Recurse -Force
+```
+
+---
+
+## 6. 外网穿透配置
+
+安装完成后，使用管理脚本的 **配置穿透** 功能：
+
+**Linux / 群晖：**
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" | sudo bash
+# 选择菜单 4. 配置穿透
+```
+
+**Windows：**
+
+```powershell
+irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
+# 选择菜单 4. 配置穿透
+```
+
+支持三种穿透方案，可同时配置多个：
 
 ### 方案一：Cloudflare Tunnel（推荐）
 
 - **完全免费**，固定域名 + HTTPS
-- 需要：一个托管在 Cloudflare 的域名（域名注册约 ¥50/年，Cloudflare DNS 免费使用）
+- 需要：一个托管在 Cloudflare 的域名
 - 注册：https://dash.cloudflare.com/sign-up
 
 配置流程：
-1. 选择方案 1（Cloudflare Tunnel）
+1. 选择 Cloudflare Tunnel
 2. 脚本自动安装 cloudflared
 3. 浏览器授权（选择你的域名）
 4. 输入子域名（如 `omp.yourdomain.com`）
@@ -298,14 +305,14 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/o
 
 配置完成后访问：`https://omp.yourdomain.com/admin`
 
+> **提示**：配置完成后域名信息会自动同步到 OMP 的 `config.json`，管理面板不再提示绑定域名。
+
 ### 方案二：FRP
 
 - **完全免费**，固定 IP + 端口
-- 需要：一台有公网 IP 的服务器运行 frps（自建）
+- 需要：一台有公网 IP 的服务器运行 frps
 
 #### 第一步：在公网服务器上搭建 FRP 服务端
-
-购买一台云服务器（腾讯云/阿里云轻量级即可，约 ¥30-50/月），然后执行：
 
 ```bash
 # 下载 FRP
@@ -329,7 +336,7 @@ Description=frps server
 After=network.target
 [Service]
 Type=simple
-ExecStart=/root/frp_0.61.1_linux_amd64/frps -c /root/frp_0.61.1_linux_amd64/frps.toml
+ExecStart=$(pwd)/frps -c $(pwd)/frps.toml
 Restart=always
 RestartSec=5
 [Install]
@@ -342,11 +349,103 @@ sudo systemctl enable frps && sudo systemctl start frps
 
 #### 第二步：在本地节点上配置 FRP 客户端
 
-运行穿透配置脚本，选择方案 2（FRP），按提示输入：
-1. FRP 服务器公网 IP（你刚搭建的服务器地址）
-2. FRP 认证 Token（你在 frps.toml 中设置的 auth.token）
+运行管理脚本，选择 4. 配置穿透 → FRP，按提示输入：
+1. FRP 服务器公网 IP
+2. FRP 认证 Token
 3. 远程映射端口（每个节点用不同端口，如 8001、8002、8003...）
 
-脚本会自动安装 frpc、创建配置、设置开机自启。
-
 配置完成后访问：`http://你的公网IP:8001/admin`
+
+### 方案三：ngrok
+
+- 免费版可用，固定域名需付费
+- 注册：https://dashboard.ngrok.com/signup
+
+配置流程：
+1. 选择 ngrok
+2. 输入 ngrok authtoken
+3. 可选：输入固定域名（付费功能）
+4. 脚本自动安装配置并设置开机自启
+
+配置完成后访问脚本输出的 ngrok 地址。
+
+### 重置穿透
+
+如需重新配置或清除穿透，选择菜单 **5. 重置穿透**，可以：
+- 重置 Cloudflare Tunnel
+- 重置 FRP
+- 重置 ngrok
+- 重置全部
+
+---
+
+## 7. 常见问题
+
+### Q: 安装后访问页面显示 404？
+
+**A:** 从 v3.2.1 开始，HTML 文件已嵌入二进制，不再依赖外部文件。请检查：
+- 服务是否正常启动（管理脚本菜单 7. 查看状态）
+- 端口是否被占用
+- 是否有防火墙拦截
+
+### Q: 更新后前端页面没有变化？
+
+**A:** 这是浏览器缓存问题。虽然服务端已设置 `Cache-Control: no-cache`，但部分浏览器仍可能使用缓存的 JS 文件。请**强制刷新**：`Ctrl+Shift+R`（Windows）或 `Cmd+Shift+R`（macOS）。
+
+### Q: 局域网 IP 显示 169.254.x.x？
+
+**A:** v4.0.3 已修复此问题。`169.254.x.x` 是链路本地地址（APIPA），表示网卡未获取到有效 IP。请升级到 v4.0.3 或更高版本。
+
+### Q: 端口被占用怎么办？
+
+**Linux:**
+```bash
+sudo lsof -i :8000
+sudo kill -9 <PID>
+```
+
+**Windows:**
+```powershell
+Get-NetTCPConnection -LocalPort 8000
+Stop-Process -Id <PID> -Force
+```
+
+或者直接使用管理脚本菜单 **6. 修改端口** 更换端口。
+
+### Q: 如何查看日志？
+
+**Linux:**
+```bash
+# systemd 日志
+journalctl -u openmodelpool -f
+# 或应用日志
+tail -f /opt/openmodelpool/data/app.log
+```
+
+**Windows:**
+```powershell
+Get-Content C:\openmodelpool\data\app.log -Tail 50 -Wait
+```
+
+### Q: 如何修改端口？
+
+使用管理脚本菜单 **6. 修改端口**，会自动更新：
+- OMP 启动配置
+- Cloudflare Tunnel 配置
+- FRP 配置
+- ngrok 配置
+- 重启所有服务
+
+### Q: 群晖 NAS 安装后无法访问？
+
+**A:** 请检查：
+1. DSM 防火墙是否放行了对应端口（控制面板 → 安全性 → 防火墙）
+2. SSH 登录后执行 `ps aux | grep openmodelpool` 确认进程正在运行
+3. 使用管理脚本菜单 **7. 查看状态** 检查各组件运行情况
+
+### Q: CI/CD 自动编译和发布？
+
+**A:** 项目使用 GitHub Actions 自动化发布：
+- 推送代码到 `main` 分支 → 触发 CI（go vet + 测试 + 交叉编译 + 安全扫描）
+- 创建 `v*` 标签 → 触发 Release workflow（6 平台编译 + SHA256 + 自动创建 GitHub Release）
+- 详细文档：[CI/CD 流程](openmodelpool_ci_cd_workflow.md)
