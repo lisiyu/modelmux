@@ -14,6 +14,50 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
+// UnmarshalJSON accepts content as string or array of content blocks
+// e.g. [{"type":"text","text":"hello"}] → "hello"
+func (m *ChatMessage) UnmarshalJSON(data []byte) error {
+	type Alias ChatMessage
+	aux := &struct{ *Alias }{Alias: (*Alias)(m)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		// Try parsing with content as array
+		var raw struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		}
+		if err2 := json.Unmarshal(data, &raw); err2 != nil {
+			return err
+		}
+		m.Role = raw.Role
+		m.Content = extractContentText(raw.Content)
+	}
+	return nil
+}
+
+// extractContentText converts content (string or array) to plain text
+func extractContentText(raw json.RawMessage) string {
+	// Try string first
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	// Try array of content blocks
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
+}
+
 type ChatRequest struct {
 	Model          string        `json:"model"`
 	Messages       []ChatMessage `json:"messages"`
