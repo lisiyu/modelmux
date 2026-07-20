@@ -542,6 +542,9 @@ func handleGatewayFallback(w http.ResponseWriter, r *http.Request, bodyBytes []b
 	case "/v1/embeddings":
 		// Embeddings: pass through to local handler if available, else error
 		writeError(w, 501, "embeddings not supported in gateway fallback mode")
+	case "/v1/messages":
+		// Anthropic Messages API — handled by handleAnthropicMessages before reaching here
+		writeError(w, 404, "anthropic messages endpoint should not reach gateway fallback")
 	default:
 		writeError(w, 404, "unknown gateway endpoint")
 	}
