@@ -344,78 +344,23 @@ Both Linux and Windows manager scripts provide an interactive menu: install / up
 
 ### Individual Scripts
 
-Prefer a single-function script? All scripts support dynamic release detection (compatible with both raw binary and archive assets across all versions):
+> Each platform has **one script** that does everything. No need to juggle multiple files.
 
-<details>
-<summary>📦 Linux / macOS</summary>
+| Platform | Script | One-Click Command |
+|----------|--------|-------------------|
+| **Linux** | `omp-manager.sh` | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" \| sudo bash` |
+| **Windows** | `omp-manager.ps1` | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
 
-| Script | Function | Command |
-|--------|----------|---------|
-| `omp-manager.sh` | Full menu (install/upgrade/uninstall/tunnel/port/status/restart) | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" \| sudo bash` |
-| `omp-deploy.sh` | Install only | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh?t=$(date +%s)" \| sudo bash` |
-| `omp-update.sh` | Upgrade only | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-update.sh?t=$(date +%s)" \| sudo bash` |
-| `auto-update.sh` | Auto-update (cron) | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/auto-update.sh?t=$(date +%s)" \| sudo bash` |
-| `omp-tunnel.sh` | Tunnel setup only (Cloudflare / FRP) | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.sh?t=$(date +%s)" \| sudo bash` |
+### Auto-Update (unattended, for cron / Task Scheduler)
 
-</details>
+| Platform | Command |
+|----------|---------|
+| **Linux** | `curl -fsSL "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh?t=$(date +%s)" \| sudo bash -s -- --auto-update` |
+| **Windows** | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex -- -AutoUpdate` |
 
-<details>
-<summary>🖥️ Windows (PowerShell as Admin)</summary>
+**Features:** Install · Upgrade · Uninstall · Tunnel (Cloudflare / FRP / ngrok) · Port Change · Status · Restart  
+**Smart:** Auto-detects CPU arch (amd64 / arm64 / armv7) · Auto-matches Release assets (binary or archive) · SHA256 verification
 
-| Script | Function | Command |
-|--------|----------|---------|
-| `omp-manager.ps1` | Full menu (install/upgrade/uninstall/tunnel/port/status/restart) | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
-| `omp-deploy.ps1` | Install only | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
-| `omp-update.ps1` | Upgrade only | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-update.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
-| `auto-update.ps1` | Auto-update (Task Scheduler) | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/auto-update.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
-| `omp-tunnel.ps1` | Tunnel setup only (Cloudflare / FRP / ngrok) | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
-| `omp-tunnel-reset.ps1` | Reset tunnel config | `irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-tunnel-reset.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" \| iex` |
-
-</details>
-
-> All scripts dynamically fetch the latest GitHub Release tag (override with `OMP_RELEASE_TAG=v4.0.5`) and automatically detect asset format (raw binary or archive) for cross-version compatibility.
-
-### Build from Source
-
-```bash
-# Clone
-git clone https://github.com/lisiyu/openmodelpool.git
-cd openmodelpool
-
-# Build for current platform
-make build
-
-# Run (default port 8000)
-./openmodelpool
-```
-
-### Docker Deployment
-
-```bash
-# Docker Compose (recommended)
-docker compose up -d
-
-# Or manually
-docker build -t openmodelpool .
-docker run -d --name openmodelpool -p 8000:8000 -v $(pwd)/data:/app/data openmodelpool
-```
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Service port | `8000` |
-| `COZE_API_TOKEN` | Coze PAT (optional, configurable in panel) | — |
-| `COZE_BOT_ID` | Default Coze Bot ID | — |
-
-### First Use
-
-1. Visit `http://localhost:8000` to enter the setup wizard
-2. Set admin account (username, password, email)
-3. Add Providers and fill in API Keys in the admin panel
-4. Done! Call via `/v1/chat/completions`
-
----
 
 ## 📡 API Documentation
 
