@@ -325,13 +325,13 @@ OpenModelPool Agent evolves from a lightweight personal AI proxy into a **decent
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh | sudo bash
 ```
 
 Custom parameters:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-deploy.sh | sudo bash -s -- /opt/openmodelpool 9090
+curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.sh | sudo bash -s -- /opt/openmodelpool 9090
 ```
 
 **Windows (PowerShell as Admin):**
@@ -340,7 +340,7 @@ curl -fsSL https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/o
 irm "https://raw.githubusercontent.com/lisiyu/openmodelpool/main/scripts/omp-manager.ps1?t=$(Get-Date -Format 'yyyyMMddHHmmss')" | iex
 ```
 
-The manager script provides an interactive menu: install / upgrade / uninstall / tunnel setup (Cloudflare / FRP / ngrok) / port change / status check / restart — all in one.
+Both Linux and Windows manager scripts provide an interactive menu: install / upgrade / uninstall / tunnel setup (Cloudflare / FRP) / port change / status check / restart — all in one.
 
 ### Build from Source
 
