@@ -54,16 +54,16 @@ write_info() {
 
 # 获取最新 Release tag
 get_release_tag() {
-    RELEASE_TAG="${OMP_RELEASE_TAG:-}"
-    if [ -z "$RELEASE_TAG" ]; then
-        RELEASE_TAG=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | \
+    local tag="${OMP_RELEASE_TAG:-}"
+    if [ -z "$tag" ]; then
+        tag=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | \
             python3 -c 'import sys,json;print(json.load(sys.stdin).get("tag_name",""))' 2>/dev/null)
     fi
-    if [ -z "$RELEASE_TAG" ]; then
-        write_err "无法获取最新 Release tag"
+    if [ -z "$tag" ]; then
+        echo -e "  ${RED}✗ 无法获取最新 Release tag${NC}" >&2
         return 1
     fi
-    echo "$RELEASE_TAG"
+    echo "$tag"
 }
 
 # 检测架构
@@ -142,13 +142,13 @@ install_omp() {
     write_info "目标版本: $RELEASE_TAG"
     write_info "架构: $ARCH"
 
-    write_step 0 3 "清理旧版本..."
+    write_step 1 7 "清理旧版本..."
     stop_omp
     stop_all_tunnels
     write_ok "清理完成"
 
     # 下载
-    write_step 1 3 "下载 $PKG ..."
+    write_step 2 7 "下载 $PKG ..."
     DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${PKG}"
     CHECK_URL="${DOWNLOAD_URL}.sha256"
     TMP_DIR=$(mktemp -d)
@@ -161,7 +161,7 @@ install_omp() {
     curl -fsSL "$CHECK_URL" -o "$TMP_DIR/$PKG.sha256" 2>/dev/null || true
 
     if [ -s "$TMP_DIR/$PKG.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
-        write_step 2 3 "校验 SHA256..."
+        write_step 3 7 "校验 SHA256..."
         ( cd "$TMP_DIR" && sha256sum -c "$PKG.sha256" ) || {
             write_err "SHA256 校验失败"
             rm -rf "$TMP_DIR"
@@ -169,19 +169,18 @@ install_omp() {
         }
         write_ok "校验通过"
     else
-        write_step 2 3 "跳过 SHA256 校验（无校验文件或 sha256sum 不可用）"
+        write_step 3 7 "跳过 SHA256 校验（无校验文件或 sha256sum 不可用）"
     fi
 
     # 安装
-    write_step 3 3 "安装到 $INSTALL_DIR ..."
+    write_step 4 7 "安装到 $INSTALL_DIR ..."
     mkdir -p "$INSTALL_DIR/data"
     cp "$TMP_DIR/$PKG" "$INSTALL_DIR/openmodelpool"
     chmod +x "$INSTALL_DIR/openmodelpool"
     write_ok "安装完成"
 
     # 安装 Xray
-    echo ""
-    write_info "安装 Xray (VMess 代理支持)..."
+    write_step 5 7 "安装 Xray (VMess 代理支持)..."
     XRAY_DIR="$INSTALL_DIR/xray"
     mkdir -p "$XRAY_DIR"
     XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_PKG}"
@@ -206,11 +205,11 @@ install_omp() {
 
     # 配置服务
     echo ""
-    write_step 4 4 "配置服务 (端口 ${PORT})..."
+    write_step 6 7 "配置服务 (端口 ${PORT})..."
     setup_service
 
     # 启动
-    write_step 5 5 "启动服务..."
+    write_step 7 7 "启动服务..."
     stop_omp
     sleep 1
     start_omp
@@ -440,7 +439,7 @@ upgrade_omp() {
 
     rm -rf "$TMP_DIR"
 
-    write_step 5 5 "启动服务..."
+    write_step 7 7 "启动服务..."
     start_omp
     sleep 3
 
@@ -548,7 +547,7 @@ setup_cloudflare() {
         esac
         if command -v apt-get >/dev/null 2>&1; then
             curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null 2>&1
-            echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflared.list >/dev/null 2>&1
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs 2>/dev/null || echo stable) main" | tee /etc/apt/sources.list.d/cloudflared.list >/dev/null 2>&1
             apt-get update -qq && apt-get install -y cloudflared 2>/dev/null || {
                 curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" -o /usr/local/bin/cloudflared
                 chmod +x /usr/local/bin/cloudflared
@@ -662,15 +661,6 @@ setup_frp() {
     echo -e "  FRP 需要一台有公网 IP 的服务器作为中转。"
     echo ""
 
-    read -p "  FRP 服务器公网 IP: " FRP_SERVER
-    [ -z "$FRP_SERVER" ] && { write_err "服务器地址不能为空"; return 1; }
-
-    read -p "  FRP 认证 Token: " FRP_TOKEN
-    [ -z "$FRP_TOKEN" ] && { write_err "Token 不能为空"; return 1; }
-
-    read -p "  远程映射端口（默认 8001）: " REMOTE_PORT
-    REMOTE_PORT="${REMOTE_PORT:-8001}"
-
     # 检测已有配置，复用
     if [ -f /etc/frp/frpc.toml ]; then
         write_info "检测到已有 FRP 配置: /etc/frp/frpc.toml"
@@ -680,10 +670,29 @@ setup_frp() {
             if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/frpc.service ]; then
                 systemctl restart frpc
                 write_ok "frpc 服务已重启"
+            else
+                pkill -f "frpc " 2>/dev/null || true
+                nohup /usr/local/bin/frpc -c /etc/frp/frpc.toml >> "$INSTALL_DIR/data/frpc.log" 2>&1 &
+                write_ok "frpc 已后台启动"
             fi
+            FRP_SERVER=$(grep "serverAddr" /etc/frp/frpc.toml | sed 's/serverAddr = "//' | sed 's/"//')
+            REMOTE=$(grep "remotePort" /etc/frp/frpc.toml | sed 's/remotePort = //')
+            echo ""
+            write_ok "FRP 穿透已就绪（复用配置）"
+            echo -e "  外网地址: ${CYAN}http://$FRP_SERVER:$REMOTE${NC}"
+            echo -e "  管理面板: ${CYAN}http://$FRP_SERVER:$REMOTE/admin${NC}"
             return
         fi
     fi
+
+    read -p "  FRP 服务器公网 IP: " FRP_SERVER
+    [ -z "$FRP_SERVER" ] && { write_err "服务器地址不能为空"; return 1; }
+
+    read -p "  FRP 认证 Token: " FRP_TOKEN
+    [ -z "$FRP_TOKEN" ] && { write_err "Token 不能为空"; return 1; }
+
+    read -p "  远程映射端口（默认 8001）: " REMOTE_PORT
+    REMOTE_PORT="${REMOTE_PORT:-8001}"
 
     # Install frpc
     if ! command -v frpc >/dev/null 2>&1; then
