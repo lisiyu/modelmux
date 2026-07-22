@@ -133,6 +133,28 @@ function Start-Configured-Tunnels {
     }
 }
 
+# Get the locally installed OMP version as a human-readable string.
+# Tries (in order): running OMP API -> PE ProductVersion metadata -> file timestamp.
+function Get-LocalVersion {
+    # 1) Query the running instance via its HTTP API (most accurate)
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:$Port/api/version" -UseBasicParsing -TimeoutSec 3
+        if ($resp.version) { return $resp.version }
+    } catch {}
+    # 2) Read PE file-version metadata (works even when OMP is stopped)
+    if (Test-Path $exePath) {
+        try {
+            $peVer = (Get-Item $exePath).VersionInfo.ProductVersion
+            if ($peVer -and $peVer -notmatch "^0\.0\.0\.0") { return $peVer }
+        } catch {}
+    }
+    # 3) Fallback: file last-write time (clearly labelled)
+    if (Test-Path $exePath) {
+        return "未知 (构建时间: $((Get-Item $exePath).LastWriteTime.ToString('yyyy-MM-dd HH:mm')))"
+    }
+    return "未安装"
+}
+
 # --- Cloudflare Tunnel 控制 ---
 function Stop-Cloudflared {
     Stop-ScheduledTask -TaskName $cfTaskName -ErrorAction SilentlyContinue
@@ -366,8 +388,8 @@ function Upgrade-OMP {
         return
     }
 
-    $oldVersion = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm")
-    Write-Info "当前版本时间: $oldVersion"
+    $localVer = Get-LocalVersion
+    Write-Info "当前版本: $localVer"
     Write-Info "目标版本: $RELEASE_TAG"
 
     Write-Step 1 3 "下载最新版本..."
@@ -1141,6 +1163,7 @@ function Show-Status {
 
     if (Test-Path $exePath) {
         Write-Info "安装路径: $exePath"
+        Write-Info ("版本: " + (Get-LocalVersion))
         Write-Info "构建时间: $((Get-Item $exePath).LastWriteTime.ToString('yyyy-MM-dd HH:mm'))"
     } else { Write-Info "未安装" }
 
@@ -1313,14 +1336,9 @@ function Auto-Update {
 
     Write-AULog "==== OpenModelPool 自动更新检查 ===="
 
-    # 当前版本
-    $curVer = ""
-    try {
-        $resp = Invoke-RestMethod -Uri "http://localhost:$Port/api/version" -UseBasicParsing -TimeoutSec 5
-        $curVer = $resp.version
-    } catch {
-        Write-AULog "无法获取当前版本（服务可能未运行），继续检查..."
-    }
+    # 当前版本 (reuse shared helper)
+    $curVer = Get-LocalVersion
+    if ($curVer -match "未知|未安装") { Write-AULog "无法获取当前版本（服务可能未运行），继续检查..." }
 
     # 最新版本
     $latestTag = $env:OMP_RELEASE_TAG
