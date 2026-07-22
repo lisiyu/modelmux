@@ -240,9 +240,10 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 	}
 	// On Windows, explicitly specify Chrome path if available
 	if isWindows() {
-		// Launch Chrome off-screen so no visible window pops up to confuse
-		// the user. The embedded screenshot workflow still works via CDP.
-		opts = append(opts, chromedp.Flag("window-position", "-32000,-32000"))
+			// Use Headless mode: no visible window, full CDP support,
+		// and screenshots work correctly (off-screen windows are not
+		// rendered by Windows GPU/DirectX so CDP capture returns blank).
+		opts = append(opts, chromedp.Headless)
 		if chromePath := findChromePath(); chromePath != "" {
 			opts = append(opts, chromedp.ExecPath(chromePath))
 			slog.Info("browser login using Chrome", "path", chromePath)
