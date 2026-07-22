@@ -90,6 +90,19 @@ function Stop-OMP {
 }
 
 function Start-OMP {
+    # already running -> skip to avoid duplicate instance
+    if (Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue) { return }
+    # Prefer the Scheduled Task: the service runs in its own session, so closing
+    # this script/console window does NOT terminate it.
+    $task = Get-ScheduledTask -TaskName $ompTaskName -ErrorAction SilentlyContinue
+    if ($task) {
+        try {
+            Start-ScheduledTask -TaskName $ompTaskName -ErrorAction Stop
+            Start-Sleep -Seconds 3
+            return
+        } catch {}
+    }
+    # Fallback: launch directly if no task exists yet
     $startBat = Join-Path $InstallDir "start.bat"
     if (Test-Path $startBat) {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $startBat -WindowStyle Hidden
@@ -97,6 +110,27 @@ function Start-OMP {
         Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -WindowStyle Hidden
     }
     Start-Sleep -Seconds 3
+}
+
+# Auto-start any configured tunnel services after upgrade/install (via their Scheduled Tasks,
+# which are independent of the current session).
+function Start-Configured-Tunnels {
+    $tunnels = @(
+        @{ Name = "Cloudflare"; Task = $cfTaskName;  Bin = $cfExe;    Proc = "cloudflared" },
+        @{ Name = "FRP";        Task = $frpTaskName; Bin = $frpExe;    Proc = "frpc" },
+        @{ Name = "ngrok";      Task = $ngrokTaskName; Bin = $ngrokExe; Proc = "ngrok" }
+    )
+    foreach ($t in $tunnels) {
+        if (-not (Test-Path $t.Bin)) { continue }
+        if (-not (Get-ScheduledTask -TaskName $t.Task -ErrorAction SilentlyContinue)) { continue }
+        if (Get-Process -Name $t.Proc -ErrorAction SilentlyContinue) { continue }
+        try {
+            Start-ScheduledTask -TaskName $t.Task -ErrorAction Stop
+            Write-OK "$($t.Name) 隧道已自动拉起"
+        } catch {
+            Write-Err "$($t.Name) 隧道启动失败: $_"
+        }
+    }
 }
 
 # --- Cloudflare Tunnel 控制 ---
@@ -353,6 +387,7 @@ function Upgrade-OMP {
 
     Write-Step 3 3 "重启服务..."
     Start-OMP
+    Start-Configured-Tunnels
     $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
     if ($proc) {
         Write-OK "升级完成 (PID: $($proc.Id))"
@@ -1327,7 +1362,7 @@ function Auto-Update {
 
     # 停止
     Write-AULog "停止服务..."
-    Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Stop-OMP
     Start-Sleep -Seconds 2
 
     # 替换
@@ -1337,6 +1372,7 @@ function Auto-Update {
     # 启动
     Write-AULog "启动服务..."
     Start-OMP
+    Start-Configured-Tunnels
     Start-Sleep -Seconds 3
 
     $proc = Get-Process -Name "openmodelpool" -ErrorAction SilentlyContinue
@@ -1347,6 +1383,7 @@ function Auto-Update {
         if (Test-Path $bakPath) {
             Copy-Item $bakPath -Destination $exePath -Force
             Start-OMP
+            Start-Configured-Tunnels
             Write-AULog "已回滚"
         }
     }
