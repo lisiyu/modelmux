@@ -654,7 +654,7 @@ function Setup-FRP {
         if ($frpExisting -match 'serverAddr = "([^"]+)"') { $existingServer = $Matches[1] }
         if ($frpExisting -match "remotePort = (\d+)") { $existingRemotePort = $Matches[1] }
         if ($existingServer) {
-            Write-Host "  检测到已有 FRP 配置: $existingServer:$existingRemotePort" -ForegroundColor $G
+            Write-Host "  检测到已有 FRP 配置: ${existingServer}:${existingRemotePort}" -ForegroundColor $G
             $reuseChoice = Read-Host "  是否复用此配置？[Y/n]"
             if ($reuseChoice -ne "n" -and $reuseChoice -ne "N") {
                 $frpServer = $existingServer
