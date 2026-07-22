@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -19,9 +20,19 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// startXvfb ensures Xvfb is running on display :99
-func startXvfb() {
-	// Check if display :99 is accessible
+// isWindows returns true if the current OS is Windows
+func isWindows() bool {
+	return runtime.GOOS == "windows"
+}
+
+// ensureDisplayEnvironment sets up the display environment for browser automation.
+// On Linux: starts Xvfb on display :99 if not already running.
+// On Windows: no-op (Chrome runs natively without virtual display).
+func ensureDisplayEnvironment() {
+	if isWindows() {
+		return // Windows doesn't need Xvfb
+	}
+	// Linux: start Xvfb on display :99
 	if err := exec.Command("xdpyinfo", "-display", ":99").Run(); err == nil {
 		return // Xvfb already running
 	}
@@ -33,6 +44,30 @@ func startXvfb() {
 	cmd.Start()
 	time.Sleep(2 * time.Second)
 	slog.Info("Xvfb started", "display", ":99", "pid", cmd.Process.Pid)
+	os.Setenv("DISPLAY", ":99")
+}
+
+// findChromePath searches for Chrome/Chromium executable on Windows.
+// Returns empty string if not found (chromedp will use its default search).
+func findChromePath() string {
+	if !isWindows() {
+		return ""
+	}
+	// Common Chrome installation paths on Windows
+	candidates := []string{
+		os.Getenv("ProgramFiles") + "\\Google\\Chrome\\Application\\chrome.exe",
+		os.Getenv("ProgramFiles(x86)") + "\\Google\\Chrome\\Application\\chrome.exe",
+		os.Getenv("LOCALAPPDATA") + "\\Google\\Chrome\\Application\\chrome.exe",
+		// Edge as fallback
+		os.Getenv("ProgramFiles(x86)") + "\\Microsoft\\Edge\\Application\\msedge.exe",
+		os.Getenv("ProgramFiles") + "\\Microsoft\\Edge\\Application\\msedge.exe",
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
 }
 
 // BrowserLoginSession manages a Chrome session for provider login
@@ -185,21 +220,30 @@ func handleBrowserLoginStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Start Xvfb for non-headless mode
-	startXvfb()
-	os.Setenv("DISPLAY", ":99")
+	// Set up display environment (Xvfb on Linux, no-op on Windows)
+	ensureDisplayEnvironment()
 
-	// Chrome options — non-headless with Xvfb to bypass Cloudflare detection
+	// Chrome options — platform-aware configuration
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("disable-features", "AutomationControlled"),
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("enable-automation", false),
 		chromedp.WindowSize(1280, 800),
+	}
+	// no-sandbox is Linux-only; on Windows it can cause issues
+	if !isWindows() {
+		opts = append(opts, chromedp.Flag("no-sandbox", true))
+		opts = append(opts, chromedp.Flag("disable-dev-shm-usage", true))
+	}
+	// On Windows, explicitly specify Chrome path if available
+	if isWindows() {
+		if chromePath := findChromePath(); chromePath != "" {
+			opts = append(opts, chromedp.Flag("chrome-executable-path", chromePath))
+			slog.Info("browser login using Chrome", "path", chromePath)
+		}
 	}
 	if proxyURL != "" {
 		opts = append(opts, chromedp.ProxyServer(proxyURL))
