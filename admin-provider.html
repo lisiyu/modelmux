@@ -544,17 +544,22 @@ window.addEventListener('load', async function() {
   var pid = getQueryParam('id');
   var isEdit = !!pid;
 
-  // 1. Presets: use sessionStorage cache (static, compiled into binary)
+  // 1. Presets: use sessionStorage cache with 5-min TTL (compiled into binary but may change on update)
   var presetPromise;
   try {
-    var cachedPresets = sessionStorage.getItem('omp_presets_cache');
-    if (cachedPresets) {
-      presetPromise = Promise.resolve(JSON.parse(cachedPresets));
+    var raw = sessionStorage.getItem('omp_presets_cache');
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (parsed.ts && Date.now() - parsed.ts < 300000) {
+        presetPromise = Promise.resolve(parsed.data);
+      } else {
+        sessionStorage.removeItem('omp_presets_cache');
+      }
     }
   } catch(e) {}
   if (!presetPromise) {
     presetPromise = fetch('/api/providers/presets').then(r => r.json()).then(d => {
-      try { sessionStorage.setItem('omp_presets_cache', JSON.stringify(d)); } catch(e) {}
+      try { sessionStorage.setItem('omp_presets_cache', JSON.stringify({ ts: Date.now(), data: d })); } catch(e) {}
       return d;
     }).catch(() => ({}));
   }
