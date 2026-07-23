@@ -402,7 +402,25 @@ var presetProviders = []Provider{
 		Description: "扣子智能体平台（专有 API，模型为 coze-{bot_id} 格式）。API Key 填写 PAT 个人访问令牌",
 		APIKeyURL:  "https://www.coze.cn",
 		Icon: "coze",
-		Models: []ModelDef{},
+		Models: []ModelDef{
+			// ===== 基础模型 =====
+			{ID: "auto", Name: "Auto (自动选择)", Tier: "basic", Enabled: true},
+			{ID: "deepseek-v4-flash", Name: "DeepSeek V4 Flash", Tier: "basic", Enabled: true},
+			{ID: "doubao-seed-2.1-turbo", Name: "Doubao Seed 2.1 Turbo", Tier: "basic", Enabled: true},
+			{ID: "minimax-m2.7", Name: "MiniMax M2.7", Tier: "basic", Enabled: true},
+			{ID: "kimi-k2.5", Name: "Kimi K2.5", Tier: "basic", Enabled: true},
+			{ID: "glm-5.1", Name: "GLM 5.1", Tier: "basic", Enabled: true},
+			// ===== 高级模型 =====
+			{ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", Tier: "advanced", Enabled: true},
+			{ID: "doubao-seed-2.1-pro", Name: "Doubao Seed 2.1 Pro", Tier: "advanced", Enabled: true},
+			{ID: "minimax-m3", Name: "MiniMax M3", Tier: "advanced", Enabled: true},
+			{ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", Tier: "advanced", Enabled: true},
+			{ID: "glm-5.2", Name: "GLM 5.2", Tier: "advanced", Enabled: true},
+			// ===== 超级模型 =====
+			{ID: "kimi-k3", Name: "Kimi K3", Tier: "super", Enabled: true},
+		},
+		// model_bot_map: 在管理面板配置每个模型对应的 Coze bot_id
+		// 格式: {"kimi-k3": "7664xxxxxxxxx", "glm-5.2": "7664xxxxxxxxx", ...}
 	},
 	{
 		ID: "nvidia", Name: "NVIDIA NIM", Type: "openai_compatible",
