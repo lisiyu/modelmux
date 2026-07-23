@@ -355,6 +355,7 @@ select.form-input{appearance:none;cursor:pointer}
       <button class="v8-toolbar-btn" onclick="v8MatrixDeselectAll()">取消全选</button>
       <button class="v8-toolbar-btn" onclick="v8MatrixEnableAll()">全部启用</button>
       <button class="v8-toolbar-btn" onclick="v8MatrixDisableAll()">全部禁用</button>
+      <button class="v8-toolbar-btn" style="background:rgba(34,197,94,.12);color:#22c55e;border-color:rgba(34,197,94,.3)" onclick="v8ShowAddModel()">+ 添加自定义模型</button>
     </div>
     <input type="text" class="v8-search-box" placeholder="🔍 搜索模型..." oninput="v8MatrixSearch(this.value)">
   </div>
@@ -467,7 +468,14 @@ function renderModelMatrix(pid) {
       tbody += renderModelRow(syncedModels[yi], ' <span class="v8-model-tag synced">同步</span>');
     }
   }
-  if (!systemModels.length && !syncedModels.length) {
+  var customModels = models.filter(function(m){return m.source === 'custom' || m.source === 'user';});
+  if (customModels.length) {
+    tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">自定义模型（' + customModels.length + '）</td></tr>';
+    for (var ci = 0; ci < customModels.length; ci++) {
+      tbody += renderModelRow(customModels[ci], ' <span class="v8-model-tag" style="background:rgba(245,158,11,.15);color:#f59e0b;font-size:10px;padding:1px 6px;border-radius:3px">自定义</span>');
+    }
+  }
+  if (!systemModels.length && !syncedModels.length && !customModels.length) {
     for (var ai = 0; ai < models.length; ai++) {
       tbody += renderModelRow(models[ai], '');
     }
@@ -560,6 +568,49 @@ async function v8SaveModelMatrix(pid) {
   } catch(e) {
     toast('保存失败: ' + e.message, 'error');
   }
+}
+
+function v8ShowAddModel() {
+  var existing = document.getElementById('v8AddModelInline');
+  if (existing) { existing.remove(); return; }
+  var wrap = document.createElement('div');
+  wrap.id = 'v8AddModelInline';
+  wrap.style.cssText = 'padding:16px;margin-bottom:12px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px';
+  wrap.innerHTML = `
+    <div style="font-size:14px;font-weight:600;margin-bottom:10px">添加自定义模型</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:200px">
+        <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">模型 ID（API 调用时使用的标识）</label>
+        <input type="text" id="v8NewModelId" placeholder="如: claude-opus-4.8-think" style="width:100%;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none">
+      </div>
+      <div style="flex:1;min-width:200px">
+        <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">显示名称（可选）</label>
+        <input type="text" id="v8NewModelName" placeholder="如: Claude Opus 4.8 Think" style="width:100%;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:14px;outline:none">
+      </div>
+      <button class="v8-toolbar-btn" style="background:rgba(34,197,94,.15);color:#22c55e;border-color:rgba(34,197,94,.3);padding:10px 20px" onclick="v8AddCustomModel()">添加</button>
+      <button class="v8-toolbar-btn" style="padding:10px 16px" onclick="document.getElementById('v8AddModelInline').remove()">取消</button>
+    </div>
+  `;
+  var toolbar = document.querySelector('.v8-toolbar');
+  toolbar.parentNode.insertBefore(wrap, toolbar.nextSibling);
+  document.getElementById('v8NewModelId').focus();
+}
+
+function v8AddCustomModel() {
+  var mid = document.getElementById('v8NewModelId').value.trim();
+  var mname = document.getElementById('v8NewModelName').value.trim() || mid;
+  if (!mid) { toast('请输入模型 ID', 'error'); return; }
+  var p = allProviders.find(function(x){ return x.id === currentPid; });
+  if (!p) return;
+  if (!p.models) p.models = [];
+  // Check for duplicate
+  for (var i = 0; i < p.models.length; i++) {
+    if (p.models[i].id === mid) { toast('模型 ID 已存在: ' + mid, 'error'); return; }
+  }
+  p.models.push({ id: mid, name: mname, enabled: true, source: 'custom' });
+  document.getElementById('v8AddModelInline').remove();
+  renderModelMatrix(currentPid);
+  toast('✅ 已添加自定义模型: ' + mid + '（记得保存）');
 }
 
 function v8MatrixSearch(query) {
