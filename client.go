@@ -787,6 +787,12 @@ func cozeNonStream(p Provider, model string, messages []ChatMessage) (*ChatRespo
 		return nil, fmt.Errorf("coze API token not configured (set API Key in provider config)")
 	}
 	botID := model
+	// Check model_bot_map first (model name -> Coze bot_id)
+	if p.ModelBotMap != nil {
+		if mapped, ok := p.ModelBotMap[model]; ok && mapped != "" {
+			botID = mapped
+		}
+	}
 	if strings.HasPrefix(botID, "coze-") {
 		botID = botID[5:]
 	}
@@ -928,6 +934,12 @@ func cozeStream(p Provider, model string, messages []ChatMessage, w io.Writer) e
 		return nil
 	}
 	botID := model
+	// Check model_bot_map first (model name -> Coze bot_id)
+	if p.ModelBotMap != nil {
+		if mapped, ok := p.ModelBotMap[model]; ok && mapped != "" {
+			botID = mapped
+		}
+	}
 	if strings.HasPrefix(botID, "coze-") {
 		botID = botID[5:]
 	}
