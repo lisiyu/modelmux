@@ -457,9 +457,35 @@ function renderModelMatrix(pid) {
 
   var tbody = '';
   if (systemModels.length) {
-    tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">系统默认模型</td></tr>';
-    for (var si = 0; si < systemModels.length; si++) {
-      tbody += renderModelRow(systemModels[si], ' <span class="v8-model-tag system">默认</span>');
+    // Group system models by tier (基础/高级/超级)
+    var basicModels = systemModels.filter(function(m){return m.tier === 'basic';});
+    var advancedModels = systemModels.filter(function(m){return m.tier === 'advanced';});
+    var superModels = systemModels.filter(function(m){return m.tier === 'super';});
+    var noTierModels = systemModels.filter(function(m){return !m.tier;});
+
+    if (basicModels.length) {
+      tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">基础模型（' + basicModels.length + '）</td></tr>';
+      for (var bi = 0; bi < basicModels.length; bi++) {
+        tbody += renderModelRow(basicModels[bi], ' <span class="v8-model-tag system">基础</span>');
+      }
+    }
+    if (advancedModels.length) {
+      tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">高级模型（' + advancedModels.length + '）</td></tr>';
+      for (var ai2 = 0; ai2 < advancedModels.length; ai2++) {
+        tbody += renderModelRow(advancedModels[ai2], ' <span class="v8-model-tag" style="background:rgba(99,102,241,.15);color:#818cf8;font-size:10px;padding:1px 6px;border-radius:3px">高级</span>');
+      }
+    }
+    if (superModels.length) {
+      tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">超级模型（' + superModels.length + '）</td></tr>';
+      for (var si2 = 0; si2 < superModels.length; si2++) {
+        tbody += renderModelRow(superModels[si2], ' <span class="v8-model-tag" style="background:rgba(234,179,8,.15);color:#facc15;font-size:10px;padding:1px 6px;border-radius:3px">超级</span>');
+      }
+    }
+    if (noTierModels.length) {
+      tbody += '<tr class="v8-section-row"><td colspan="' + colCount + '">系统默认模型（' + noTierModels.length + '）</td></tr>';
+      for (var ni = 0; ni < noTierModels.length; ni++) {
+        tbody += renderModelRow(noTierModels[ni], ' <span class="v8-model-tag system">默认</span>');
+      }
     }
   }
   if (syncedModels.length) {
